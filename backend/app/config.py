@@ -54,6 +54,7 @@ CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "1200"))   # znaki w fragmencie
 CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "150"))
 MAX_FILE_SIZE_KB: int = int(os.getenv("MAX_FILE_SIZE_KB", "500"))  # pomijaj duże pliki
 TOP_K_RETRIEVAL: int = int(os.getenv("TOP_K_RETRIEVAL", "6"))
+CHAT_HISTORY_LIMIT: int = int(os.getenv("CHAT_HISTORY_LIMIT", "10"))
 
 # Rozszerzenia plików, które analizujemy
 CODE_EXTENSIONS: List[str] = [
@@ -110,6 +111,38 @@ AUTO_EXPORT_HTML: bool = os.getenv("AUTO_EXPORT_HTML", "true").lower() in ("1", 
 AUTO_INDEX_GUIDES: bool = os.getenv("AUTO_INDEX_GUIDES", "true").lower() in ("1", "true", "yes")
 
 
+# ---------------------------------------------------------------------------
+# STT (Faza 2) — subprocess do audio-core, nie instaluj torch w repo-story
+# ---------------------------------------------------------------------------
+AUDIO_CORE_PYTHON: Path = Path(
+    os.getenv("AUDIO_CORE_PYTHON", "/mnt/ollama/ai-envs/audio-core/.venv/bin/python")
+)
+TRANSCRIBE_SCRIPT: Path = PROJECT_ROOT / "scripts" / "transcribe_file.py"
+WHISPER_MODELS_DIR: Path = Path(
+    os.getenv("WHISPER_MODELS_DIR", "/mnt/ollama/whisper_models")
+)
+STT_MODEL: str = os.getenv("STT_MODEL", "medium")
+STT_FALLBACK_MODEL: str = os.getenv("STT_FALLBACK_MODEL", "base")
+STT_MAX_AUDIO_MB: int = int(os.getenv("STT_MAX_AUDIO_MB", "25"))
+STT_TIMEOUT_S: int = int(os.getenv("STT_TIMEOUT_S", "120"))
+STT_MIN_DURATION_S: float = float(os.getenv("STT_MIN_DURATION_S", "0.35"))
+STT_MIN_RMS: float = float(os.getenv("STT_MIN_RMS", "0.008"))
+
+# TTS (Faza 3) — Piper CLI + modele na /mnt/ollama
+PIPER_BIN: Path = Path(os.getenv("PIPER_BIN", "/home/zarou/.local/bin/piper"))
+PIPER_MODEL: Path = Path(
+    os.getenv("PIPER_MODEL", "/mnt/ollama/modele/piper/pl_PL-gosia-medium.onnx")
+)
+TTS_MAX_CHARS: int = int(os.getenv("TTS_MAX_CHARS", "1500"))
+TTS_TIMEOUT_S: int = int(os.getenv("TTS_TIMEOUT_S", "60"))
+TTS_VENV_PYTHON: Path = Path(
+    os.getenv("TTS_VENV_PYTHON", "/mnt/ollama/ai-envs/tts/.venv/bin/python")
+)
+
+# Conversation: balanced | voice | detailed
+CHAT_CONVERSATION_MODE: str = os.getenv("CHAT_CONVERSATION_MODE", "balanced")
+
+
 def summary() -> dict:
     """Zwraca podsumowanie konfiguracji - przydatne do debug i UI."""
     return {
@@ -128,8 +161,14 @@ def summary() -> dict:
         "chunk_size": CHUNK_SIZE,
         "chunk_overlap": CHUNK_OVERLAP,
         "top_k_retrieval": TOP_K_RETRIEVAL,
+        "chat_history_limit": CHAT_HISTORY_LIMIT,
         "api": {"host": API_HOST, "port": API_PORT},
         "knowledge_db": str(KNOWLEDGE_DB),
         "auto_export_html": AUTO_EXPORT_HTML,
         "auto_index_guides": AUTO_INDEX_GUIDES,
+        "stt": {
+            "audio_core_python": str(AUDIO_CORE_PYTHON),
+            "model": STT_MODEL,
+            "whisper_models_dir": str(WHISPER_MODELS_DIR),
+        },
     }

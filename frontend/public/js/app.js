@@ -596,13 +596,316 @@
   }
 
   let chatSessionId = null;
-  function appendChatMessage(role, text) {
+  let chatAbortController = null;
+  let chatVoiceReply = true;
+  let chatTtsAudio = null;
+  let chatTtsAbort = null;
+  let lastTtsText = "";
+  let forceVoiceReplyOnce = false;
+  let audioPlaybackUnlocked = false;
+
+  const chatVoiceToggle = $("#chat-voice-reply");
+  const chatTtsBar = $("#chat-tts-bar");
+  const chatTtsLabel = $("#chat-tts-label");
+  const chatTtsStop = $("#chat-tts-stop");
+  const chatTtsReplay = $("#chat-tts-replay");
+
+  if (chatVoiceToggle) {
+    chatVoiceReply = chatVoiceToggle.checked;
+    chatVoiceToggle.addEventListener("change", () => {
+      chatVoiceReply = chatVoiceToggle.checked;
+    });
+  }
+
+  function isVoiceReplyEnabled() {
+    return chatVoiceReply || (chatVoiceToggle && chatVoiceToggle.checked);
+  }
+
+  function shouldAutoPlayVoice() {
+    return isVoiceReplyEnabled() || forceVoiceReplyOnce;
+  }
+
+  /** Browsers block audio.play() without a recent user gesture — unlock on mic click. */
+  function unlockAudioPlayback() {
+    if (audioPlaybackUnlocked) return;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) {
+        const ctx = new Ctx();
+        if (ctx.state === "suspended") ctx.resume();
+      }
+      const silent = new Audio(
+        "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=",
+      );
+      silent.volume = 0.01;
+      silent.play().then(() => {
+        audioPlaybackUnlocked = true;
+      }).catch(() => {});
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function showTtsBar(playing) {
+    if (!chatTtsBar) return;
+    chatTtsBar.classList.remove("hidden");
+    chatTtsBar.classList.toggle("chat-tts-bar-playing", !!playing);
+    if (chatTtsLabel) {
+      chatTtsLabel.textContent = playing
+        ? "Odtwarzam odpowiedź… (możesz zatrzymać)"
+        : "Gotowe — możesz ponowić odtwarzanie";
+    }
+    if (chatTtsReplay) chatTtsReplay.disabled = !lastTtsText;
+  }
+
+  function hideTtsBar() {
+    if (!chatTtsBar) return;
+    chatTtsBar.classList.add("hidden");
+    chatTtsBar.classList.remove("chat-tts-bar-playing");
+  }
+
+  function stopTts() {
+    if (chatTtsAbort) {
+      chatTtsAbort.abort();
+      chatTtsAbort = null;
+    }
+    if (chatTtsAudio) {
+      chatTtsAudio.pause();
+      try {
+        if (chatTtsAudio.src) URL.revokeObjectURL(chatTtsAudio.src);
+      } catch {
+        /* ignore */
+      }
+      chatTtsAudio = null;
+    }
+    hideTtsBar();
+  }
+
+  if (chatTtsStop) chatTtsStop.addEventListener("click", () => stopTts());
+  if (chatTtsReplay) {
+    chatTtsReplay.addEventListener("click", () => {
+      if (lastTtsText) playTtsForText(lastTtsText);
+    });
+  }
+
+  async function playTtsForText(text) {
+    if (!text || !text.trim()) return;
+    stopTts();
+    lastTtsText = text.trim();
+    chatTtsAbort = new AbortController();
+    showTtsBar(true);
+    try {
+      const res = await fetch("/api/tts/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: lastTtsText }),
+        signal: chatTtsAbort.signal,
+      });
+      if (!res.ok) {
+        let detail = "TTS niedostępne";
+        try {
+          const err = await res.json();
+          detail = err.detail || detail;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(detail);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      chatTtsAudio = new Audio(url);
+      chatTtsAudio.onended = () => {
+        URL.revokeObjectURL(url);
+        chatTtsAudio = null;
+        showTtsBar(false);
+      };
+      await chatTtsAudio.play();
+      audioPlaybackUnlocked = true;
+    } catch (e) {
+      if (e.name === "AbortError") {
+        hideTtsBar();
+      } else {
+        showTtsBar(false);
+        const hint =
+          e.name === "NotAllowedError"
+            ? "Przeglądarka zablokowała auto-odtwarzanie. Kliknij 🔊 Odtwórz przy odpowiedzi lub 🔊 Ponów."
+            : `Głos: ${e.message}. Użyj 🔊 Odtwórz przy odpowiedzi.`;
+        appendChatMessage("system", hint);
+        if (chatMicStatus) chatMicStatus.textContent = hint;
+      }
+    } finally {
+      chatTtsAbort = null;
+    }
+  }
+
+  function attachAssistantTtsControls(wrapper, text) {
+    if (!wrapper || !text || text.startsWith("Błąd:")) return;
+    const actions = document.createElement("div");
+    actions.className = "chat-msg-actions";
+    const playBtn = document.createElement("button");
+    playBtn.type = "button";
+    playBtn.className = "chat-tts-btn";
+    playBtn.textContent = "🔊 Odtwórz";
+    playBtn.title = "Odtwórz odpowiedź głosem";
+    playBtn.addEventListener("click", () => playTtsForText(text));
+    const stopBtn = document.createElement("button");
+    stopBtn.type = "button";
+    stopBtn.className = "chat-tts-btn";
+    stopBtn.textContent = "⏹ Stop";
+    stopBtn.title = "Zatrzymaj odtwarzanie";
+    stopBtn.addEventListener("click", () => stopTts());
+    actions.append(playBtn, stopBtn);
+    wrapper.appendChild(actions);
+  }
+
+  function createAssistantMessageShell() {
+    const box = $("#chat-messages");
+    const wrap = document.createElement("div");
+    wrap.className = "chat-msg-assistant-wrap";
+    const body = document.createElement("div");
+    body.className = "chat-msg chat-msg-assistant chat-msg-streaming";
+    wrap.appendChild(body);
+    box.appendChild(wrap);
+    box.scrollTop = box.scrollHeight;
+    return { wrap, body };
+  }
+
+  function appendChatMessage(role, text, extraClass = "") {
     const box = $("#chat-messages");
     const div = document.createElement("div");
-    div.className = `chat-msg chat-msg-${role}`;
+    div.className = `chat-msg chat-msg-${role}${extraClass ? ` ${extraClass}` : ""}`;
     div.textContent = text;
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
+    return div;
+  }
+
+  function formatCitations(citations) {
+    return (citations || [])
+      .map((c) => `• [${c.guide_title} / ${c.section}] ${(c.excerpt || "").slice(0, 120)}…`)
+      .join("\n");
+  }
+
+  function renderChatCitations(citations) {
+    const cites = formatCitations(citations);
+    $("#chat-citations").textContent = cites ? `Źródła:\n${cites}` : "";
+  }
+
+  function parseSseBuffer(buffer) {
+    const events = [];
+    const parts = buffer.split("\n\n");
+    const remainder = parts.pop() || "";
+    for (const block of parts) {
+      if (!block.trim()) continue;
+      let eventName = "message";
+      let dataLine = "";
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event:")) eventName = line.slice(6).trim();
+        else if (line.startsWith("data:")) dataLine = line.slice(5).trim();
+      }
+      if (!dataLine) continue;
+      try {
+        events.push({ event: eventName, data: JSON.parse(dataLine) });
+      } catch {
+        /* ignore malformed chunk */
+      }
+    }
+    return { events, remainder };
+  }
+
+  async function streamChatMessage(msg, options = {}) {
+    if (chatAbortController) chatAbortController.abort();
+    chatAbortController = new AbortController();
+    const signal = chatAbortController.signal;
+    const autoVoice =
+      options.voiceReply !== undefined ? options.voiceReply : shouldAutoPlayVoice();
+
+    stopTts();
+    appendChatMessage("user", msg);
+    const { wrap: assistantWrap, body: pending } = createAssistantMessageShell();
+    const submitBtn = $("#chat-submit");
+    if (submitBtn) submitBtn.disabled = true;
+
+    let buffer = "";
+    let fullText = "";
+
+    try {
+      const res = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: msg,
+          session_id: chatSessionId,
+          voice_mode: autoVoice || isVoiceReplyEnabled(),
+        }),
+        signal,
+      });
+
+      if (!res.ok) {
+        let detail = res.statusText;
+        try {
+          const err = await res.json();
+          detail = err.detail || detail;
+        } catch {
+          /* non-JSON error body */
+        }
+        throw new Error(detail);
+      }
+
+      if (!res.body) throw new Error("Brak strumienia odpowiedzi.");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const { events, remainder } = parseSseBuffer(buffer);
+        buffer = remainder;
+
+        for (const { event, data } of events) {
+          if (event === "meta") {
+            if (data.session_id) chatSessionId = data.session_id;
+            if (data.citations) renderChatCitations(data.citations);
+          } else if (event === "token" && data.text) {
+            fullText += data.text;
+            pending.textContent = fullText;
+            const box = $("#chat-messages");
+            if (box) box.scrollTop = box.scrollHeight;
+          } else if (event === "done") {
+            if (data.session_id) chatSessionId = data.session_id;
+            if (data.full_answer) fullText = data.full_answer;
+            if (data.citations) renderChatCitations(data.citations);
+          } else if (event === "error") {
+            throw new Error(data.detail || "Błąd streamingu.");
+          }
+        }
+      }
+
+      pending.classList.remove("chat-msg-streaming");
+      const answer = fullText || "(brak odpowiedzi)";
+      pending.textContent = answer;
+      attachAssistantTtsControls(assistantWrap, answer);
+      const playNow = autoVoice && fullText;
+      if (playNow) {
+        await playTtsForText(fullText);
+      }
+      forceVoiceReplyOnce = false;
+    } catch (e) {
+      if (e.name === "AbortError") {
+        pending.classList.remove("chat-msg-streaming");
+        pending.textContent = fullText || "(przerwano)";
+        attachAssistantTtsControls(assistantWrap, fullText || "");
+        return;
+      }
+      pending.classList.remove("chat-msg-streaming");
+      pending.textContent = `Błąd: ${e.message}`;
+      attachAssistantTtsControls(assistantWrap, "");
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
+      chatAbortController = null;
+    }
   }
 
   function refreshChatHint() {
@@ -622,27 +925,136 @@
     const msg = input.value.trim();
     if (!msg) return;
     input.value = "";
-    appendChatMessage("user", msg);
-    appendChatMessage("assistant", "…");
-    const pending = $("#chat-messages").lastElementChild;
+    await streamChatMessage(msg);
+  });
+
+  // --- Phase 2: push-to-talk microphone (STT → stream chat) ---
+  const chatMic = $("#chat-mic");
+  const chatMicStatus = $("#chat-mic-status");
+  let micRecorder = null;
+  let micStream = null;
+  let micChunks = [];
+  let micState = "idle";
+  const MAX_RECORD_MS = 120_000;
+  let micMaxTimer = null;
+
+  function setMicState(state, message = "") {
+    micState = state;
+    if (!chatMic) return;
+    chatMic.classList.remove("chat-mic-recording", "chat-mic-transcribing", "chat-mic-active");
+    if (state === "recording") {
+      chatMic.classList.add("chat-mic-recording", "chat-mic-active");
+      chatMic.textContent = "⏹";
+      chatMic.setAttribute("aria-pressed", "true");
+    } else {
+      chatMic.textContent = "🎤";
+      chatMic.setAttribute("aria-pressed", "false");
+    }
+    if (state === "transcribing") chatMic.classList.add("chat-mic-transcribing");
+    chatMic.disabled = state === "transcribing";
+    if (chatMicStatus) chatMicStatus.textContent = message;
+  }
+
+  async function transcribeAndChat(blob) {
+    setMicState("transcribing", "Transkrybuję mowę…");
+    const submitBtn = $("#chat-submit");
+    if (submitBtn) submitBtn.disabled = true;
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: msg, session_id: chatSessionId }),
-      });
+      const form = new FormData();
+      form.append("audio", blob, "nagranie.webm");
+      const res = await fetch("/api/stt/transcribe", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || res.statusText);
-      chatSessionId = data.session_id;
-      pending.textContent = data.answer || "(brak odpowiedzi)";
-      const cites = (data.citations || [])
-        .map((c) => `• [${c.guide_title} / ${c.section}] ${(c.excerpt || "").slice(0, 120)}…`)
-        .join("\n");
-      $("#chat-citations").textContent = cites ? `Źródła:\n${cites}` : "";
+      const text = (data.text || "").trim();
+      if (!text) {
+        throw new Error("Nie rozpoznano mowy — spróbuj ponownie, bliżej mikrofonu.");
+      }
+      setMicState("idle", `Rozpoznano (${data.model || "whisper"})`);
+      if (chatVoiceToggle) {
+        chatVoiceToggle.checked = true;
+        chatVoiceReply = true;
+      }
+      forceVoiceReplyOnce = true;
+      await streamChatMessage(text, { voiceReply: true });
     } catch (e) {
-      pending.textContent = `Błąd: ${e.message}`;
+      setMicState("idle", "");
+      appendChatMessage(
+        "system",
+        e.message.includes("Permission")
+          ? "Brak dostępu do mikrofonu — zezwól w przeglądarce i sprawdź PipeWire."
+          : `Mikrofon: ${e.message}`,
+      );
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
-  });
+  }
+
+  async function startMicRecording() {
+    if (micState !== "idle" || !chatMic) return;
+    unlockAudioPlayback();
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      setMicState("idle", "");
+      appendChatMessage(
+        "system",
+        "Nie można użyć mikrofonu — sprawdź uprawnienia przeglądarki i ustawienia dźwięku (PipeWire).",
+      );
+      return;
+    }
+    micChunks = [];
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : "audio/webm";
+    micRecorder = new MediaRecorder(micStream, { mimeType });
+    micRecorder.ondataavailable = (ev) => {
+      if (ev.data.size > 0) micChunks.push(ev.data);
+    };
+    micRecorder.start(250);
+    setMicState("recording", "Nagrywam… kliknij ⏹ aby zakończyć i wysłać.");
+    micMaxTimer = setTimeout(() => stopMicRecording(), MAX_RECORD_MS);
+  }
+
+  function stopMicRecording() {
+    if (micMaxTimer) {
+      clearTimeout(micMaxTimer);
+      micMaxTimer = null;
+    }
+    if (micState !== "recording" || !micRecorder) return;
+
+    const recorder = micRecorder;
+    micRecorder = null;
+
+    recorder.onstop = async () => {
+      if (micStream) {
+        micStream.getTracks().forEach((t) => t.stop());
+        micStream = null;
+      }
+      const blob = new Blob(micChunks, { type: recorder.mimeType || "audio/webm" });
+      micChunks = [];
+      if (blob.size < 100) {
+        setMicState("idle", "");
+        appendChatMessage("system", "Nagranie za krótkie — kliknij 🎤, poczekaj chwilę i mów wyraźniej.");
+        return;
+      }
+      await transcribeAndChat(blob);
+    };
+
+    if (recorder.state !== "inactive") recorder.stop();
+  }
+
+  if (chatMic) {
+    chatMic.addEventListener("click", async (ev) => {
+      ev.preventDefault();
+      if (micState === "transcribing") return;
+      if (micState === "recording") {
+        stopMicRecording();
+        return;
+      }
+      stopTts();
+      await startMicRecording();
+    });
+  }
 
   function debounce(fn, ms) {
     let t;

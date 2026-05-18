@@ -12,9 +12,10 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from starlette.background import BackgroundTask
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -31,7 +32,9 @@ from .guide_indexer import GuideIndexer
 from .html_exporter import HtmlExporter
 from .knowledge_store import KnowledgeStore
 from .rag_chat import RagChatService
+from .stt_service import SttError, SttService
 from .system_profile import SystemProfileService
+from .tts_service import TtsError, TtsService
 
 
 config.LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -93,6 +96,8 @@ kb = KnowledgeBase()
 guide_indexer = GuideIndexer()
 html_exporter = HtmlExporter()
 rag_chat = RagChatService()
+stt_service = SttService()
+tts_service = TtsService()
 system_profile_svc = SystemProfileService()
 knowledge_store = KnowledgeStore()
 
@@ -100,6 +105,15 @@ knowledge_store = KnowledgeStore()
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     session_id: Optional[str] = Field(None, description="Optional chat session id")
+    voice_mode: bool = Field(
+        False,
+        description="Shorter, speech-friendly answers; use with TTS playback",
+    )
+
+
+class TtsRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=8000)
+    voice: str = Field("pl", description="Voice preset (reserved)")
 
 
 class ProfileUploadRequest(BaseModel):
@@ -340,7 +354,75 @@ def chat(req: ChatRequest) -> Dict[str, Any]:
     """Global RAG chat over guides and system profile."""
     if not get_client().ping():
         raise HTTPException(status_code=503, detail="Ollama niedostępna.")
-    return rag_chat.chat(req.message, session_id=req.session_id)
+    return rag_chat.chat(
+        req.message,
+        session_id=req.session_id,
+        voice_mode=req.voice_mode,
+    )
+
+
+@app.post("/api/stt/transcribe")
+async def stt_transcribe(
+    audio: UploadFile = File(..., description="Nagranie audio (webm, wav, ogg)"),
+) -> Dict[str, Any]:
+    """Transcribe microphone recording to Polish text (faster-whisper via audio-core)."""
+    try:
+        data = await audio.read()
+        return stt_service.transcribe_bytes(
+            data,
+            filename=audio.filename or "audio.webm",
+        )
+    except SttError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("stt/transcribe failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/tts/speak")
+def tts_speak(req: TtsRequest) -> FileResponse:
+    """Synthesize Polish speech (Piper offline). Returns audio/wav."""
+    try:
+        wav_path = tts_service.synthesize_wav(req.text)
+        return FileResponse(
+            wav_path,
+            media_type="audio/wav",
+            filename="odpowiedz.wav",
+            background=BackgroundTask(lambda p=wav_path: p.unlink(missing_ok=True)),
+        )
+    except TtsError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("tts/speak failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/chat/stream")
+def chat_stream(req: ChatRequest) -> StreamingResponse:
+    """Stream RAG chat response as Server-Sent Events (token-by-token)."""
+
+    def event_generator():
+        try:
+            yield from rag_chat.chat_stream(
+                req.message,
+                session_id=req.session_id,
+                voice_mode=req.voice_mode,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("chat/stream failed")
+            from .sse import format_sse_event
+
+            yield format_sse_event("error", {"detail": str(exc)})
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/system-profile")

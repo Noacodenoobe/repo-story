@@ -883,9 +883,135 @@ footer {
   margin-right: 8%;
 }
 
+.chat-msg-streaming::after {
+  content: "▋";
+  display: inline-block;
+  margin-left: 2px;
+  animation: chat-cursor-blink 0.9s step-end infinite;
+  opacity: 0.85;
+}
+
+@keyframes chat-cursor-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.chat-form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .chat-form {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+.chat-mic {
+  flex-shrink: 0;
+  min-width: 44px;
+  font-size: 18px;
+  user-select: none;
+  touch-action: none;
+}
+
+.chat-mic-recording {
+  animation: chat-mic-pulse 1s ease-in-out infinite;
+  background: rgba(248, 81, 73, 0.2);
+  border-color: #f85149;
+}
+
+.chat-mic-transcribing {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+@keyframes chat-mic-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+.chat-mic-status {
+  min-height: 1.2em;
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+.chat-voice-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.chat-voice-toggle input {
+  width: auto;
+}
+
+.chat-mic-active {
+  background: rgba(248, 81, 73, 0.25) !important;
+  border-color: #f85149 !important;
+}
+
+.chat-msg-assistant-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-right: 8%;
+}
+
+.chat-msg-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chat-tts-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.chat-tts-btn:hover {
+  border-color: var(--accent);
+}
+
+.chat-tts-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent);
+  background: rgba(63, 185, 80, 0.08);
+}
+
+.chat-tts-bar.hidden {
+  display: none;
+}
+
+.chat-tts-bar-playing .chat-tts-bar-icon {
+  animation: chat-mic-pulse 1s ease-in-out infinite;
+}
+
+.chat-tts-label {
+  flex: 1;
+  font-size: 13px;
+  min-width: 120px;
 }
 
 .chat-form input {

@@ -95,7 +95,8 @@ git push origin v4.0.0
 | Polski (PL-gate) | Działa | `backend/app/polish_validator.py` |
 | Eksport HTML | Działa | `backend/app/html_exporter.py`, `GET /api/reports/{id}/export.html` |
 | SQLite RAG | Działa | `backend/app/knowledge_store.py`, `data/knowledge.db` |
-| Czat tekstowy (bez streamu) | Działa | `POST /api/chat`, `backend/app/rag_chat.py` |
+| Czat tekstowy (sync) | Działa | `POST /api/chat`, `backend/app/rag_chat.py` |
+| Czat streaming (SSE) | **Faza 1 wdrożona** | `POST /api/chat/stream`, `rag_chat.chat_stream()` |
 | Profil systemu | Działa | `scripts/collect_system_profile.py`, `POST /api/system-profile/refresh` |
 | Zasady hosta w RAG | Działa | `backend/app/host_rules.py`, chunki `source_type=rules` |
 | Streaming Ollama (kod) | **Już jest, nieużywany w czacie** | `OllamaClient.stream_generate()` w `llm_client.py` |
@@ -104,9 +105,9 @@ git push origin v4.0.0
 
 ### 0.3 Czego NIE ma (to budujesz)
 
-- Endpoint streamingu odpowiedzi (SSE lub WebSocket).
-- UI pokazujące tokeny na żywo.
-- Endpoint STT (nagranie → tekst) i przycisk mikrofonu.
+- ~~Endpoint streamingu odpowiedzi (SSE)~~ — **zrobione (Faza 1)**.
+- ~~UI pokazujące tokeny na żywo~~ — **zrobione (Faza 1)**.
+- ~~Endpoint STT (nagranie → tekst) i przycisk mikrofonu~~ — **zrobione (Faza 2)**.
 - TTS i pełna pętla głosowa (Faza 3).
 
 ### 0.4 Zasady hosta (OBOWIĄZKOWE przy implementacji)
@@ -523,8 +524,8 @@ TTS_VENV_PYTHON: Path = Path("/mnt/ollama/ai-envs/tts/.venv/bin/python")  # po u
 | GET | `/api/health` | Ollama + modele |
 | POST | `/api/analyze` | Generuj przewodnik |
 | POST | `/api/chat` | Czat sync (zostaw dla kompatybilności) |
-| **POST** | **`/api/chat/stream`** | **DO DODANIA Faza 1** |
-| **POST** | **`/api/stt/transcribe`** | **DO DODANIA Faza 2** |
+| **POST** | **`/api/chat/stream`** | **Faza 1 — SSE streaming** |
+| **POST** | **`/api/stt/transcribe`** | **Faza 2 — mikrofon STT** |
 | **POST** | **`/api/tts/speak`** | **DO DODANIA Faza 3** |
 | POST | `/api/system-profile/refresh` | Profil + rules index |
 | GET | `/api/knowledge/stats` | Statystyki chunków |
@@ -537,20 +538,20 @@ TTS_VENV_PYTHON: Path = Path("/mnt/ollama/ai-envs/tts/.venv/bin/python")  # po u
 
 ### Sprint A — Faza 1 (szac. 1 sesja)
 
-1. [ ] `rag_chat.chat_stream()` + test jednostkowy mock Ollama
-2. [ ] `main.py` endpoint SSE + nagłówki anti-buffer
-3. [ ] `app.js` — parser stream + UI
-4. [ ] Weryfikacja 1.1–1.5
-5. [ ] Nie usuwaj `POST /api/chat` (fallback)
+1. [x] `rag_chat.chat_stream()` + test jednostkowy mock Ollama (`tests/test_rag_chat_stream.py`)
+2. [x] `main.py` endpoint SSE + nagłówki anti-buffer
+3. [x] `app.js` — parser stream + UI
+4. [x] Weryfikacja 1.1–1.2 (curl SSE); 1.3 UI — sprawdź w przeglądarce
+5. [x] Nie usuwaj `POST /api/chat` (fallback)
 
 ### Sprint B — Faza 2 (szac. 1–2 sesje)
 
-1. [ ] `scripts/transcribe_file.py` + test ręczny WAV
-2. [ ] `stt_service.py` + ffmpeg convert
-3. [ ] `main.py` endpoint multipart
-4. [ ] UI mikrofon + integracja ze stream czatem
-5. [ ] Weryfikacja 2.1–2.6
-6. [ ] Rozszerz `collect_system_profile.py` jeśli brakuje wpisów whisper (już częściowo jest)
+1. [x] `scripts/transcribe_file.py` + test ręczny WAV
+2. [x] `stt_service.py` + ffmpeg convert
+3. [x] `main.py` endpoint multipart (`python-multipart` w requirements)
+4. [x] UI mikrofon (push-to-talk) + integracja ze stream czatem
+5. [x] Weryfikacja 2.2 (curl); 2.3–2.5 — sprawdź mikrofon w przeglądarce
+6. [x] Profil whisper — już w `collect_system_profile.py`
 
 ### Sprint C — Faza 3 (osobna sesja, po akceptacji użytkownika)
 

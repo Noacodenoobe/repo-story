@@ -15,16 +15,28 @@ ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q4_K_M
 
 Otwórz: **http://127.0.0.1:9743**
 
-## Co otrzymujesz (v4)
+## Co otrzymujesz (v4.3)
 
 - **Przewodnik interaktywny** — przegląd, zastosowania, przepływ, instrukcja, wykresy, mapa połączeń
 - **Opowieść i quiz** — krótkie podsumowanie po polsku
-- **Rozmowa (RAG)** — czat z bazą zapisanych przewodników i profilem Twojego systemu
-- **Diagnostyka** — profil sprzętu/narzędzi, indeks wiedzy SQLite
+- **Rozmowa (RAG)** — czat z bazą SQLite (`data/knowledge.db`): przewodniki, profil systemu, regulamin hosta
+- **Asystent głosowy** — mikrofon (toggle), streaming odpowiedzi, TTS (Piper), sterowanie odtwarzaniem
+- **Diagnostyka** — profil sprzętu/narzędzi, statystyki bazy wiedzy
 - **Eksport** — Markdown i HTML offline
-- **Szczegóły techniczne** — opcjonalnie (wolniejsze, wymaga embeddingów)
+- **Dyktowanie systemowe** — `scripts/system-dictation.sh` (skrót klawiszowy → STT → wklejenie tekstu)
 
-Plan rozwoju (asystent głosowy): `docs/AGENT_IMPLEMENTATION_LIVE_ASSISTANT.md`
+Szczegóły wdrożenia i API: `docs/AGENT_IMPLEMENTATION_LIVE_ASSISTANT.md`
+
+### Baza wiedzy — co robi, czego nie robi
+
+| Tak | Nie (jeszcze) |
+|-----|----------------|
+| Indeksuje wygenerowane przewodniki po analizie repo | Nie wykonuje poleceń w systemie (brak agenta-akcji) |
+| Profil sprzętu + zasady z `/mnt/ollama/system-control` | Nie edytuje plików ani nie uruchamia skryptów za Ciebie |
+| Wyszukiwanie semantyczne (embeddings) + odpowiedź Bielik | Nie jest pełnym „Jarvisem” 24/7 w tle |
+| Migracja starych raportów: `POST /api/knowledge/migrate` | |
+
+GitHub: https://github.com/Noacodenoobe/repo-story
 
 ## Konfiguracja
 

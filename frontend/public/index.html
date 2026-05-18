@@ -100,12 +100,24 @@
     <section class="panel" id="tab-chat">
       <div class="card">
         <h2>Rozmowa z bazą wiedzy</h2>
-        <p class="muted">Pytaj o instalację i konfigurację — odpowiedzi z przewodników i profilu systemu.</p>
+        <p class="muted">Pytaj o instalację i konfigurację — odpowiedzi z przewodników i profilu systemu. Mikrofon: kliknij 🎤 aby włączyć/wyłączyć nagrywanie.</p>
+        <label class="chat-voice-toggle muted">
+          <input type="checkbox" id="chat-voice-reply" checked />
+          Odtwarzaj odpowiedzi głosem (krótsze odpowiedzi; po 🎤 włącza się automatycznie)
+        </label>
         <div id="chat-messages" class="chat-messages"></div>
         <form id="chat-form" class="chat-form">
+          <button type="button" class="btn-secondary chat-mic" id="chat-mic" title="Kliknij: start / stop nagrywania" aria-pressed="false">🎤</button>
           <input type="text" id="chat-input" placeholder="Np. Jak zainstalować NoiseTorch na moim Linuxie?" autocomplete="off" />
-          <button type="submit" class="btn-primary">Wyślij</button>
+          <button type="submit" class="btn-primary" id="chat-submit">Wyślij</button>
         </form>
+        <p id="chat-mic-status" class="chat-mic-status muted" aria-live="polite"></p>
+        <div id="chat-tts-bar" class="chat-tts-bar hidden" aria-live="polite">
+          <span class="chat-tts-bar-icon" aria-hidden="true">🗣️</span>
+          <span id="chat-tts-label" class="chat-tts-label">Odtwarzam odpowiedź…</span>
+          <button type="button" class="btn-secondary" id="chat-tts-stop" title="Zatrzymaj mowę">⏹ Zatrzymaj</button>
+          <button type="button" class="btn-secondary" id="chat-tts-replay" title="Odtwórz ostatnią odpowiedź">🔊 Ponów</button>
+        </div>
         <div id="chat-citations" class="chat-citations muted"></div>
       </div>
     </section>
