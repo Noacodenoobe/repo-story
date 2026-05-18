@@ -9,5 +9,7 @@ Pola wymagane:
 - interesting_fact (jedna ciekawostka)
 - caution (jedna rzecz, na którą warto uważać — prosto)
 
+WYŁĄCZNIE język polski. Nigdy nie kopiuj z README dosłownie — przepisz własnymi słowami.
+
 DANE PROJEKTU:
 {context}

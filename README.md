@@ -15,12 +15,16 @@ ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q4_K_M
 
 Otwórz: **http://127.0.0.1:9743**
 
-## Co otrzymujesz
+## Co otrzymujesz (v4)
 
-- **Slajdy** — jeden pomysł na ekran, analogie, „co to dla Ciebie”
-- **Quiz** — 2–3 proste pytania na koniec
-- **Słowniczek** — trudne słowa po kliknięciu
-- **Szczegóły techniczne** — opcjonalnie, w zwiniętej sekcji
+- **Przewodnik interaktywny** — przegląd, zastosowania, przepływ, instrukcja, wykresy, mapa połączeń
+- **Opowieść i quiz** — krótkie podsumowanie po polsku
+- **Rozmowa (RAG)** — czat z bazą zapisanych przewodników i profilem Twojego systemu
+- **Diagnostyka** — profil sprzętu/narzędzi, indeks wiedzy SQLite
+- **Eksport** — Markdown i HTML offline
+- **Szczegóły techniczne** — opcjonalnie (wolniejsze, wymaga embeddingów)
+
+Plan rozwoju (asystent głosowy): `docs/AGENT_IMPLEMENTATION_LIVE_ASSISTANT.md`
 
 ## Konfiguracja
 

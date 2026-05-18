@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Repo Opowieść — GitHub po ludzku</title>
+  <title>Repo Opowieść — interaktywny przewodnik</title>
   <link rel="stylesheet" href="/css/styles.css" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📖%3C/text%3E%3C/svg%3E" />
 </head>
@@ -13,88 +13,73 @@
       <span class="brand-logo">📖</span>
       <div class="brand-text">
         <h1>Repo Opowieść</h1>
-        <p>Wklej link — dostaniesz prezentację, nie raport inżynierski</p>
+        <p>Interaktywny przewodnik po projekcie — diagramy, instrukcje, wykresy</p>
       </div>
     </div>
-    <div class="health-pill" id="health-pill" title="Status połączenia z Ollamą">
+    <div class="health-pill" id="health-pill">
       <span class="dot dot-unknown"></span>
       <span class="label">Sprawdzam Ollamę…</span>
     </div>
   </header>
 
   <nav class="tabs" role="tablist">
-    <button class="tab tab-active" data-tab="analyze" role="tab">🔍 Nowa opowieść</button>
-    <button class="tab" data-tab="history" role="tab">📚 Historia</button>
-    <button class="tab" data-tab="diag" role="tab">⚙️ Diagnostyka</button>
-    <button class="tab" data-tab="help" role="tab">❓ Pomoc</button>
+    <button class="tab tab-active" data-tab="analyze">🔍 Nowy przewodnik</button>
+    <button class="tab" data-tab="history">📚 Historia</button>
+    <button class="tab" data-tab="chat">💬 Rozmowa</button>
+    <button class="tab" data-tab="diag">⚙️ Diagnostyka</button>
+    <button class="tab" data-tab="help">❓ Pomoc</button>
   </nav>
 
   <main>
     <section class="panel panel-active" id="tab-analyze">
       <div class="card">
-        <h2>Opowiedz mi o projekcie</h2>
-        <p class="muted">Wklej adres publicznego projektu z GitHub. Otrzymasz krótką, interaktywną prezentację po polsku — bez żargonu.</p>
+        <h2>Przeanalizuj projekt</h2>
+        <p class="muted">Wklej link z GitHub. Otrzymasz przewodnik z diagramami zależności, instrukcją instalacji, przypadkami użycia i wykresami.</p>
         <form id="analyze-form">
           <label for="repo-url">Adres projektu</label>
-          <input type="url" id="repo-url" placeholder="https://github.com/uzytkownik/projekt" required autocomplete="off" />
+          <input type="url" id="repo-url" placeholder="https://github.com/noisetorch/NoiseTorch" required autocomplete="off" />
           <div class="checkboxes">
             <label><input type="checkbox" id="force-reclone" /> Pobierz projekt od nowa</label>
-            <label><input type="checkbox" id="include-technical" /> Dołącz szczegóły techniczne (wolniejsze)</label>
+            <label><input type="checkbox" id="include-technical" /> Dołącz analizę techniczną (wolniejsze, opcjonalnie)</label>
           </div>
-          <button type="submit" class="btn-primary" id="analyze-btn">✨ Stwórz prezentację</button>
+          <button type="submit" class="btn-primary" id="analyze-btn">✨ Generuj przewodnik</button>
         </form>
         <div class="progress" id="progress" hidden>
           <div class="spinner"></div>
-          <div class="progress-text" id="progress-text">Przygotowuję opowieść…</div>
+          <div class="progress-text" id="progress-text">Przygotowuję przewodnik…</div>
         </div>
         <div class="alert" id="alert" hidden></div>
       </div>
 
       <div id="results" hidden>
-        <div class="card deck-intro" id="deck-intro"></div>
+        <div class="card guide-header" id="guide-header"></div>
 
-        <div class="card presentation-card" id="presentation-card">
-          <div class="presentation-toolbar">
-            <span class="slide-counter" id="slide-counter">1 / 1</span>
-            <button type="button" class="btn-secondary btn-sm" id="btn-fullscreen" title="Pełny ekran">⛶</button>
-          </div>
-          <div class="progress-bar-wrap">
-            <div class="progress-bar-fill" id="progress-bar-fill"></div>
-          </div>
-          <div class="slide-stage" id="slide-stage"></div>
-          <div class="slide-nav">
-            <button type="button" class="btn-secondary" id="btn-prev" disabled>← Wstecz</button>
-            <button type="button" class="btn-primary" id="btn-next">Dalej →</button>
-          </div>
-        </div>
+        <nav class="section-nav" id="section-nav" aria-label="Sekcje przewodnika">
+          <button type="button" class="section-btn section-active" data-section="overview">📋 Przegląd</button>
+          <button type="button" class="section-btn" data-section="use_cases">🎯 Zastosowania</button>
+          <button type="button" class="section-btn" data-section="flow">🔄 Przepływ</button>
+          <button type="button" class="section-btn" data-section="howto">🛠️ Instrukcja</button>
+          <button type="button" class="section-btn" data-section="modify">✏️ Modyfikacje</button>
+          <button type="button" class="section-btn" data-section="charts">📊 Wykresy</button>
+          <button type="button" class="section-btn" data-section="graph">🕸️ Mapa połączeń</button>
+          <button type="button" class="section-btn" data-section="story">📖 Opowieść</button>
+          <button type="button" class="section-btn" data-section="technical">🔧 Techniczne</button>
+        </nav>
 
-        <div class="card" id="quiz-card" hidden>
-          <h3>📝 Sprawdź, czy to zrozumiałeś</h3>
-          <div id="quiz-block"></div>
-        </div>
-
-        <details class="card technical-details" id="technical-details">
-          <summary>🔧 Szczegóły techniczne (opcjonalnie)</summary>
-          <div id="technical-content">
-            <h4>📊 Statystyki</h4>
-            <div id="static-block"></div>
-            <h4>📐 Diagramy</h4>
-            <div class="mermaid" id="diagram-overview"></div>
-            <div class="mermaid" id="diagram-tree"></div>
-            <div id="card-llm" hidden>
-              <h4>🧠 Analiza techniczna</h4>
-              <div id="llm-block"></div>
-            </div>
-            <div id="card-polish" hidden>
-              <h4>🇵🇱 Raport techniczny</h4>
-              <div id="polish-block" class="markdown-body"></div>
-            </div>
-          </div>
-        </details>
+        <div class="card edu-section section-visible" id="sec-overview"></div>
+        <div class="card edu-section" id="sec-use_cases"></div>
+        <div class="card edu-section" id="sec-flow"></div>
+        <div class="card edu-section" id="sec-howto"></div>
+        <div class="card edu-section" id="sec-modify"></div>
+        <div class="card edu-section" id="sec-charts"></div>
+        <div class="card edu-section" id="sec-graph"></div>
+        <div class="card edu-section" id="sec-story"></div>
+        <div class="card edu-section" id="sec-technical"></div>
 
         <div class="card">
           <div class="actions">
             <button type="button" class="btn-secondary" id="btn-download-md">⬇️ Pobierz tekst</button>
+            <button type="button" class="btn-secondary" id="btn-download-html">⬇️ Pobierz HTML</button>
           </div>
           <div class="meta" id="result-meta"></div>
         </div>
@@ -103,19 +88,36 @@
 
     <section class="panel" id="tab-history">
       <div class="card">
-        <h2>Zapisane opowieści</h2>
+        <h2>Zapisane przewodniki</h2>
         <div class="row">
-          <input type="text" id="history-search" placeholder="Szukaj po adresie…" />
+          <input type="text" id="history-search" placeholder="Szukaj…" />
           <button type="button" class="btn-secondary" id="history-refresh">🔄 Odśwież</button>
         </div>
         <div id="history-list" class="history-list"></div>
       </div>
     </section>
 
+    <section class="panel" id="tab-chat">
+      <div class="card">
+        <h2>Rozmowa z bazą wiedzy</h2>
+        <p class="muted">Pytaj o instalację i konfigurację — odpowiedzi z przewodników i profilu systemu.</p>
+        <div id="chat-messages" class="chat-messages"></div>
+        <form id="chat-form" class="chat-form">
+          <input type="text" id="chat-input" placeholder="Np. Jak zainstalować NoiseTorch na moim Linuxie?" autocomplete="off" />
+          <button type="submit" class="btn-primary">Wyślij</button>
+        </form>
+        <div id="chat-citations" class="chat-citations muted"></div>
+      </div>
+    </section>
+
     <section class="panel" id="tab-diag">
       <div class="card">
         <h2>Diagnostyka</h2>
-        <button type="button" class="btn-secondary" id="diag-refresh">🔄 Sprawdź ponownie</button>
+        <div class="row">
+          <button type="button" class="btn-secondary" id="diag-refresh">🔄 Sprawdź</button>
+          <button type="button" class="btn-secondary" id="profile-refresh">🖥️ Zbierz profil systemu</button>
+        </div>
+        <pre id="diag-kb" class="code-block muted">Baza wiedzy…</pre>
         <pre id="diag-output" class="code-block">…</pre>
       </div>
       <div class="card">
@@ -126,18 +128,21 @@
 
     <section class="panel" id="tab-help">
       <div class="card">
-        <h2>Jak to działa?</h2>
+        <h2>Jak korzystać?</h2>
         <ol>
-          <li>Uruchom Ollamę: <code>ollama serve</code></li>
-          <li>Pobierz model: <code>ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q4_K_M</code></li>
-          <li>Wklej link i kliknij <strong>Stwórz prezentację</strong>.</li>
+          <li><code>ollama serve</code> + model Bielik</li>
+          <li>Wklej link, <strong>bez</strong> „szczegółów technicznych” jeśli embeddingi nie działają</li>
+          <li>Przechodź sekcje: mapa połączeń (klikaj węzły), wykresy, instrukcja</li>
         </ol>
       </div>
     </section>
   </main>
 
   <footer>Repo Opowieść · lokalnie · MIT</footer>
+
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="/js/app.js"></script>
 </body>

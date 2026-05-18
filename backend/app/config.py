@@ -20,8 +20,10 @@ REPOS_DIR: Path = DATA_DIR / "repos"
 INDEXES_DIR: Path = Path(os.getenv("REPO_ANALYZER_INDEXES", PROJECT_ROOT / "indexes"))
 REPORTS_DIR: Path = Path(os.getenv("REPO_ANALYZER_REPORTS", PROJECT_ROOT / "reports"))
 LOGS_DIR: Path = Path(os.getenv("REPO_ANALYZER_LOGS", PROJECT_ROOT / "logs"))
+KNOWLEDGE_DB: Path = Path(os.getenv("KNOWLEDGE_DB", DATA_DIR / "knowledge.db"))
+EXPORTS_DIR: Path = REPORTS_DIR / "exports"
 
-for _d in (DATA_DIR, REPOS_DIR, INDEXES_DIR, REPORTS_DIR, LOGS_DIR):
+for _d in (DATA_DIR, REPOS_DIR, INDEXES_DIR, REPORTS_DIR, LOGS_DIR, EXPORTS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 FRONTEND_DIR: Path = PROJECT_ROOT / "frontend" / "public"
@@ -104,6 +106,8 @@ MAX_REPO_SIZE_MB: int = int(os.getenv("MAX_REPO_SIZE_MB", "500"))
 # Limity bezpieczeństwa
 # ---------------------------------------------------------------------------
 MAX_FILES_TO_ANALYZE: int = int(os.getenv("MAX_FILES_TO_ANALYZE", "2000"))
+AUTO_EXPORT_HTML: bool = os.getenv("AUTO_EXPORT_HTML", "true").lower() in ("1", "true", "yes")
+AUTO_INDEX_GUIDES: bool = os.getenv("AUTO_INDEX_GUIDES", "true").lower() in ("1", "true", "yes")
 
 
 def summary() -> dict:
@@ -125,4 +129,7 @@ def summary() -> dict:
         "chunk_overlap": CHUNK_OVERLAP,
         "top_k_retrieval": TOP_K_RETRIEVAL,
         "api": {"host": API_HOST, "port": API_PORT},
+        "knowledge_db": str(KNOWLEDGE_DB),
+        "auto_export_html": AUTO_EXPORT_HTML,
+        "auto_index_guides": AUTO_INDEX_GUIDES,
     }

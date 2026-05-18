@@ -26,7 +26,12 @@ from .knowledge_base import KnowledgeBase
 from .llm_client import OllamaError, get_client
 from .repo_fetcher import RepoFetcher, is_valid_git_url
 from .report_generator import PolishReportGenerator
-from .story_generator import StoryGenerator
+from .education_generator import EducationGenerator
+from .guide_indexer import GuideIndexer
+from .html_exporter import HtmlExporter
+from .knowledge_store import KnowledgeStore
+from .rag_chat import RagChatService
+from .system_profile import SystemProfileService
 
 
 config.LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -67,7 +72,7 @@ class GenericMessage(BaseModel):
 app = FastAPI(
     title="Repo Opowieść",
     description="Wklej link do GitHub — dostaniesz prezentację, nie raport inżynierski.",
-    version="2.0.0",
+    version="4.0.0",
 )
 
 app.add_middleware(
@@ -83,8 +88,22 @@ static_analyzer = StaticAnalyzer()
 embedder = CodeEmbedder()
 llm_analyzer = LlmAnalyzer(embedder=embedder)
 report_generator = PolishReportGenerator()
-story_generator = StoryGenerator()
+education_generator = EducationGenerator()
 kb = KnowledgeBase()
+guide_indexer = GuideIndexer()
+html_exporter = HtmlExporter()
+rag_chat = RagChatService()
+system_profile_svc = SystemProfileService()
+knowledge_store = KnowledgeStore()
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000)
+    session_id: Optional[str] = Field(None, description="Optional chat session id")
+
+
+class ProfileUploadRequest(BaseModel):
+    profile: Dict[str, Any] = Field(..., description="System profile JSON object")
 
 
 @app.get("/api/health", response_model=HealthResponse)
@@ -155,6 +174,7 @@ def analyze(req: AnalyzeRequest) -> Dict[str, Any]:
         static = static_analyzer.analyze(repo.path)
         diagrams = build_all_diagrams(repo, static.languages, static.frameworks, static.dependencies)
 
+        education_pack: Dict[str, Any] = {}
         lesson_deck: Dict[str, Any] = {}
         llm_result = None
         polish_report = ""
@@ -166,36 +186,63 @@ def analyze(req: AnalyzeRequest) -> Dict[str, Any]:
                     detail=f"Brak modelu polskiego: {config.MODEL_POLISH}. "
                     f"Pobierz: ollama pull {config.MODEL_POLISH}",
                 )
-            logger.info("Generuję prezentację edukacyjną...")
-            deck = story_generator.generate(repo, static)
-            lesson_deck = deck.to_dict()
+            logger.info("Generuję pakiet edukacyjny (przewodnik + diagramy)...")
+            pack = education_generator.generate(repo, static)
+            education_pack = pack.to_dict()
+            lesson_deck = {
+                "title": pack.title,
+                "essence": pack.essence,
+                "summary_3": pack.summary_3,
+                "slides": pack.story_slides,
+                "quiz": pack.quiz,
+            }
 
         if req.include_technical:
-            if not client.has_model(config.MODEL_EMBED):
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"Brak modelu embeddingów: {config.MODEL_EMBED}",
+            try:
+                if not client.has_model(config.MODEL_EMBED):
+                    raise HTTPException(
+                        status_code=503,
+                        detail=f"Brak modelu embeddingów: {config.MODEL_EMBED}",
+                    )
+                if not client.has_model(config.MODEL_CODER):
+                    raise HTTPException(
+                        status_code=503,
+                        detail=f"Brak modelu koderskiego: {config.MODEL_CODER}",
+                    )
+                logger.info("Indeksowanie i analiza techniczna...")
+                index = embedder.build_index(repo.path, index_name=repo.slug)
+                llm_result = llm_analyzer.run_full(index, repo, static)
+                if client.has_model(config.MODEL_POLISH):
+                    polish_report = report_generator.generate(repo, static, llm_result)
+                    report_generator.save_to_file(polish_report, repo.slug)
+            except (HTTPException, OllamaError) as tech_exc:
+                logger.warning(
+                    "Analiza techniczna nie powiodła się — prezentacja zostaje: %s", tech_exc
                 )
-            if not client.has_model(config.MODEL_CODER):
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"Brak modelu koderskiego: {config.MODEL_CODER}",
-                )
-            logger.info("Indeksowanie i analiza techniczna...")
-            index = embedder.build_index(repo.path, index_name=repo.slug)
-            llm_result = llm_analyzer.run_full(index, repo, static)
-            if client.has_model(config.MODEL_POLISH):
-                polish_report = report_generator.generate(repo, static, llm_result)
-                report_generator.save_to_file(polish_report, repo.slug)
+                if not education_pack:
+                    raise
 
         record = kb.new_record(url=req.url, slug=repo.slug)
         record.repo_info = repo.to_dict()
         record.static = static.to_dict()
         record.diagrams = diagrams
         record.lesson_deck = lesson_deck
+        record.education_pack = education_pack
         record.llm = llm_result.to_dict() if llm_result else {}
         record.polish_report = polish_report
-        kb.save(record)
+        json_path = kb.save(record)
+
+        if config.AUTO_INDEX_GUIDES and education_pack:
+            try:
+                guide_indexer.index_record(record, json_path=str(json_path))
+            except Exception as idx_exc:  # noqa: BLE001
+                logger.warning("Guide indexing failed: %s", idx_exc)
+
+        if config.AUTO_EXPORT_HTML and education_pack:
+            try:
+                html_exporter.export(record)
+            except Exception as html_exc:  # noqa: BLE001
+                logger.warning("HTML export failed: %s", html_exc)
 
         duration = round(time.time() - started, 2)
         logger.info("ANALIZA OK: %s (%.2fs)", req.url, duration)
@@ -205,6 +252,7 @@ def analyze(req: AnalyzeRequest) -> Dict[str, Any]:
             "duration_s": duration,
             "repo_info": repo.to_dict(),
             "static": static.to_dict(),
+            "education_pack": education_pack,
             "lesson_deck": lesson_deck,
             "llm": record.llm,
             "diagrams": diagrams,
@@ -256,13 +304,86 @@ def get_report_markdown(record_id: str) -> str:
         raise HTTPException(status_code=404, detail=f"Brak raportu: {record_id}")
     if record.polish_report:
         return record.polish_report
-    deck = record.lesson_deck
-    if deck:
-        lines = [f"# {deck.get('title', 'Prezentacja')}", "", deck.get("essence", "")]
-        for slide in deck.get("slides") or []:
-            lines.extend(["", f"## {slide.get('title', '')}", slide.get("body", "")])
+    edu = record.education_pack or record.lesson_deck
+    if edu:
+        lines = [f"# {edu.get('title', 'Przewodnik')}", "", edu.get("essence", "")]
+        ov = edu.get("overview") or {}
+        for key, label in [("what", "Czym jest"), ("why", "Po co"), ("how_it_works", "Jak działa")]:
+            if ov.get(key):
+                lines.extend(["", f"## {label}", ov[key]])
+        for step in edu.get("howto") or []:
+            lines.extend(["", f"## Krok {step.get('step')}: {step.get('title')}", step.get("body", "")])
         return "\n".join(lines)
     raise HTTPException(status_code=404, detail="Brak treści do eksportu.")
+
+
+@app.get("/api/reports/{record_id}/export.html", include_in_schema=False)
+def get_report_html(record_id: str) -> FileResponse:
+    """Download standalone HTML guide."""
+    record = kb.load(record_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Brak raportu: {record_id}")
+    path = html_exporter.get_path(record_id)
+    if not path:
+        path = html_exporter.export(record)
+    return FileResponse(path, media_type="text/html", filename=f"przewodnik-{record_id[:8]}.html")
+
+
+@app.get("/api/knowledge/stats")
+def knowledge_stats() -> Dict[str, Any]:
+    """RAG / SQLite diagnostics."""
+    return knowledge_store.stats()
+
+
+@app.post("/api/chat")
+def chat(req: ChatRequest) -> Dict[str, Any]:
+    """Global RAG chat over guides and system profile."""
+    if not get_client().ping():
+        raise HTTPException(status_code=503, detail="Ollama niedostępna.")
+    return rag_chat.chat(req.message, session_id=req.session_id)
+
+
+@app.get("/api/system-profile")
+def get_system_profile() -> Dict[str, Any]:
+    """Latest collected system profile."""
+    data = system_profile_svc.get()
+    if not data:
+        return {"profile": None, "message": "Brak profilu — uruchom zbieranie."}
+    return data
+
+
+@app.post("/api/system-profile/refresh")
+def refresh_system_profile() -> Dict[str, Any]:
+    """Run collect script and re-index profile."""
+    try:
+        return system_profile_svc.refresh()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Profile refresh failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/system-profile/upload")
+def upload_system_profile(req: ProfileUploadRequest) -> Dict[str, Any]:
+    """Upload profile JSON collected outside the server."""
+    try:
+        return system_profile_svc.upload(req.profile)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/knowledge/index-host-rules")
+def index_host_rules_endpoint() -> Dict[str, Any]:
+    """Index Linux AI regulamin and project standard into RAG."""
+    from .host_rules import index_host_rules
+    return index_host_rules(knowledge_store)
+
+
+@app.post("/api/knowledge/migrate")
+def migrate_knowledge() -> Dict[str, Any]:
+    """Index all existing JSON reports into SQLite."""
+    from .migrate_reports import migrate_all
+    count = migrate_all()
+    return {"migrated": count, "stats": knowledge_store.stats()}
 
 
 if config.FRONTEND_DIR.exists():

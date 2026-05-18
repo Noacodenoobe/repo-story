@@ -1,0 +1,7 @@
+Na podstawie kontekstu wypisz JSON z tablicą use_cases (min 4 elementy):
+{{"use_cases": [{{"emoji": "🎤", "title": "...", "scenario": "konkretna sytuacja", "benefit": "korzyść"}}]}}
+
+Język odpowiedzi: wyłącznie polski.
+
+KONTEKST:
+{context}

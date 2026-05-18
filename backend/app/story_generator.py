@@ -16,6 +16,7 @@ from . import config
 from .code_analyzer import StaticAnalysis
 from .lesson_deck import GlossaryEntry, LessonDeck, QuizQuestion, Slide
 from .llm_client import OllamaClient, get_client
+from .polish_validator import ensure_polish
 from .repo_fetcher import RepoInfo
 
 logger = logging.getLogger(__name__)
@@ -68,16 +69,32 @@ def _read_readme(repo_path: Path) -> str:
 
 
 def _parse_json_blob(text: str) -> Dict[str, Any]:
-    """Extract JSON object from model output."""
+    """Extract JSON object from model output, with light repair for common LLM mistakes."""
     cleaned = text.strip()
     if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start < 0 or end <= start:
-        raise ValueError("Brak obiektu JSON w odpowiedzi modelu.")
-    return json.loads(cleaned[start : end + 1])
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```\s*$", "", cleaned)
+
+    candidates: List[str] = []
+    if "{" in cleaned:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if end > start:
+            candidates.append(cleaned[start : end + 1])
+
+    for match in re.finditer(r"\{[\s\S]*\}", cleaned):
+        candidates.append(match.group(0))
+
+    last_error: Optional[Exception] = None
+    for blob in candidates:
+        for attempt in (blob, re.sub(r",\s*([}\]])", r"\1", blob)):
+            try:
+                return json.loads(attempt)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                continue
+
+    raise ValueError(f"Brak poprawnego JSON w odpowiedzi modelu: {last_error}")
 
 
 def _word_count(text: str) -> int:
@@ -122,27 +139,86 @@ class StoryGenerator:
         ]
         return "\n".join(parts)
 
+    def _generate_json(self, prompt: str, retries: int = 2) -> Dict[str, Any]:
+        """Call the model and parse JSON, with retries on malformed output."""
+        last_exc: Optional[Exception] = None
+        extra = ""
+        for _ in range(retries):
+            result = self.client.generate(
+                prompt=prompt + extra,
+                model=config.MODEL_POLISH,
+                system=self._system,
+            )
+            try:
+                return _parse_json_blob(result.response)
+            except (ValueError, json.JSONDecodeError) as exc:
+                last_exc = exc
+                extra = "\n\nWAŻNE: Odpowiedz wyłącznie jednym poprawnym obiektem JSON. Bez komentarzy."
+                logger.warning("JSON parse retry: %s", exc)
+        raise ValueError(str(last_exc))
+
+    def _polish_facts(self, facts: Dict[str, Any]) -> Dict[str, Any]:
+        """Ensure fact fields are Polish."""
+        for key in (
+            "project_name", "one_line", "problem_solved", "who_is_it_for",
+            "how_it_works_simple", "interesting_fact", "caution",
+        ):
+            if facts.get(key):
+                facts[key] = ensure_polish(str(facts[key]), context=f"facts.{key}")
+        parts = facts.get("main_parts")
+        if isinstance(parts, list):
+            facts["main_parts"] = [
+                ensure_polish(str(p), context="main_parts") for p in parts
+            ]
+        return facts
+
     def _extract_facts(self, repo: RepoInfo, static: StaticAnalysis) -> Dict[str, Any]:
         """Stage 1: structured facts in JSON."""
         template = _load_prompt("facts.txt")
         prompt = template.format(context=self._build_context(repo, static))
-        result = self.client.generate(
-            prompt=prompt,
-            model=config.MODEL_POLISH,
-            system=self._system,
-        )
-        return _parse_json_blob(result.response)
+        return self._polish_facts(self._generate_json(prompt))
 
     def _build_deck_from_facts(self, facts: Dict[str, Any]) -> LessonDeck:
         """Stage 2: lesson deck JSON from facts."""
         template = _load_prompt("story.txt")
         prompt = template.format(facts_json=json.dumps(facts, ensure_ascii=False, indent=2))
-        result = self.client.generate(
-            prompt=prompt,
-            model=config.MODEL_POLISH,
-            system=self._system,
+        return LessonDeck.from_dict(self._generate_json(prompt))
+
+    def _deck_from_facts_heuristic(self, facts: Dict[str, Any]) -> LessonDeck:
+        """Build a readable deck from facts when stage-2 JSON fails."""
+        name = str(facts.get("project_name") or "Ten projekt")
+        scenes = [
+            ("what", "🎯", "Co to jest?", facts.get("one_line", "")),
+            ("why", "💡", "Po co to powstało?", facts.get("problem_solved", "")),
+            ("how", "🧩", "Jak to działa?", facts.get("how_it_works_simple", "")),
+            ("who", "👥", "Dla kogo?", facts.get("who_is_it_for", "")),
+            ("inside", "📦", "Co jest w środku?", " ".join(facts.get("main_parts") or [])[:280]),
+            ("worth", "✨", "Czy warto?", facts.get("interesting_fact", facts.get("caution", ""))),
+        ]
+        slides = [
+            Slide(
+                id=sid,
+                emoji=emoji,
+                title=title,
+                body=_trim_words(_sanitize_plain(str(body)), _MAX_BODY_WORDS),
+                for_you="To może ułatwić Ci codzienne korzystanie z komputera.",
+            )
+            for sid, emoji, title, body in scenes
+            if str(body).strip()
+        ]
+        one_line = str(facts.get("one_line") or name)
+        return LessonDeck(
+            title=f"Opowieść: {name}",
+            essence=_trim_words(_sanitize_plain(one_line), 35),
+            summary_3=[
+                _trim_words(_sanitize_plain(one_line), 40),
+                _trim_words(_sanitize_plain(str(facts.get("problem_solved", ""))), 40),
+                _trim_words(_sanitize_plain(str(facts.get("who_is_it_for", ""))), 40),
+            ],
+            slides=slides or [
+                Slide(id="what", emoji="🎯", title="Co to jest?", body=one_line, for_you="")
+            ],
         )
-        return LessonDeck.from_dict(_parse_json_blob(result.response))
 
     def _postprocess_deck(self, deck: LessonDeck) -> LessonDeck:
         """Enforce length limits and jargon filtering."""
@@ -235,10 +311,16 @@ class StoryGenerator:
         facts: Optional[Dict[str, Any]] = None
         try:
             facts = self._extract_facts(repo, static)
-            deck = self._build_deck_from_facts(facts)
+            try:
+                deck = self._build_deck_from_facts(facts)
+            except Exception as deck_exc:  # noqa: BLE001
+                logger.warning("Deck JSON failed, using heuristic deck: %s", deck_exc)
+                deck = self._deck_from_facts_heuristic(facts)
             if not deck.slides:
                 raise ValueError("Model zwrócił pustą prezentację.")
             return self._postprocess_deck(deck)
         except Exception as exc:  # noqa: BLE001
             logger.warning("StoryGenerator fallback: %s", exc)
+            if facts:
+                return self._postprocess_deck(self._deck_from_facts_heuristic(facts))
             return self._postprocess_deck(self._fallback_deck(repo, static, facts))

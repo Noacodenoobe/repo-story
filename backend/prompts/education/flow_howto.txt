@@ -1,0 +1,13 @@
+Wypisz JSON:
+{{
+  "flow_steps": [{{"id": "id", "title": "...", "description": "2-3 zdania", "tip": "wskazówka"}}],
+  "howto": [{{"step": 1, "title": "...", "body": "instrukcja", "commands": ["opcjonalna komenda"]}}]
+}}
+
+Min 5 flow_steps (od pobrania do codziennego użycia), min 4 howto.
+Użyj komend z listy jeśli pasują: {commands}
+
+Język odpowiedzi: wyłącznie polski.
+
+KONTEKST:
+{context}

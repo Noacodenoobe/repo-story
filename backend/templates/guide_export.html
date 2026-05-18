@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ title }} — Repo Opowieść</title>
+  <style>
+    :root { --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --accent: #3fb950; --card: #161b22; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); margin: 0; padding: 1.5rem; line-height: 1.5; }
+    h1, h2, h3 { color: var(--accent); }
+    .card { background: var(--card); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; border: 1px solid #30363d; }
+    .muted { color: var(--muted); }
+    pre, .code { background: #21262d; padding: 0.75rem; border-radius: 6px; overflow-x: auto; font-size: 0.9rem; }
+    .mermaid { background: #fff; padding: 1rem; border-radius: 6px; margin: 0.5rem 0; }
+    ul { padding-left: 1.25rem; }
+    a { color: #58a6ff; }
+    @media print { body { background: #fff; color: #000; } .card { border: 1px solid #ccc; } }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <h1>{{ title }}</h1>
+  <p class="muted"><a href="{{ url }}">{{ url }}</a></p>
+  {% if essence %}<p><strong>{{ essence }}</strong></p>{% endif %}
+  {% if summary_3 %}
+  <ul>{% for s in summary_3 if s %}<li>{{ s }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  <div class="card">
+    <h2>Przegląd</h2>
+    {% if overview.what %}<h3>Czym jest</h3><p>{{ overview.what }}</p>{% endif %}
+    {% if overview.why %}<h3>Po co</h3><p>{{ overview.why }}</p>{% endif %}
+    {% if overview.how_it_works %}<h3>Jak działa</h3><p>{{ overview.how_it_works }}</p>{% endif %}
+    {% if overview.limitations %}<h3>Ograniczenia</h3><p>{{ overview.limitations }}</p>{% endif %}
+  </div>
+
+  {% if use_cases %}
+  <div class="card"><h2>Zastosowania</h2>
+    {% for uc in use_cases %}
+    <h3>{{ uc.emoji }} {{ uc.title }}</h3>
+    <p>{{ uc.scenario }} — <em>{{ uc.benefit }}</em></p>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if flow_steps %}
+  <div class="card"><h2>Przepływ</h2>
+    {% if flow_mermaid %}<pre class="mermaid">{{ flow_mermaid }}</pre>{% endif %}
+    <ol>{% for s in flow_steps %}
+      <li><strong>{{ s.title }}</strong> — {{ s.description }}{% if s.tip %} <em>({{ s.tip }})</em>{% endif %}</li>
+    {% endfor %}</ol>
+    {% if install_flow_mermaid %}<h3>Instalacja</h3><pre class="mermaid">{{ install_flow_mermaid }}</pre>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if howto %}
+  <div class="card"><h2>Instrukcja</h2>
+    {% for h in howto %}
+    <h3>Krok {{ h.step }}: {{ h.title }}</h3>
+    <p>{{ h.body }}</p>
+    {% if h.commands %}<pre class="code">{% for c in h.commands %}{{ c }}
+{% endfor %}</pre>{% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if story_slides %}
+  <div class="card"><h2>Opowieść</h2>
+    {% for sl in story_slides %}
+    <h3>{{ sl.title }}</h3><p>{{ sl.body }}</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="card"><h2>Wykresy</h2><canvas id="chart-lang" height="200"></canvas></div>
+
+  <p class="muted">Wygenerowano przez Repo Opowieść — eksport offline</p>
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+    const charts = {{ charts_json | safe }};
+    if (charts.languages && window.Chart) {
+      new Chart(document.getElementById('chart-lang'), {
+        type: 'doughnut',
+        data: { labels: charts.languages.labels, datasets: [{ data: charts.languages.values }] }
+      });
+    }
+  </script>
+</body>
+</html>

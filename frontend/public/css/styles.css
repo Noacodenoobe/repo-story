@@ -666,6 +666,184 @@ input[type="text"]:focus {
   overflow: auto;
 }
 
+/* ---------------------------------------------------------------- education sections */
+.guide-header .essence {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+  padding: 0 4px;
+}
+
+.section-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--fg);
+  border-radius: 999px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.section-btn:hover {
+  border-color: var(--accent);
+}
+
+.section-btn.section-active {
+  background: var(--accent);
+  color: var(--accent-fg, #fff);
+  border-color: var(--accent);
+}
+
+.edu-section {
+  display: none;
+}
+
+.edu-section.section-visible {
+  display: block;
+}
+
+.edu-block {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.use-case-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.use-case-card {
+  background: var(--bg-soft);
+  border-radius: var(--radius);
+  padding: 16px;
+  border: 1px solid var(--border);
+}
+
+.uc-emoji {
+  font-size: 1.8rem;
+}
+
+.uc-benefit {
+  color: var(--accent);
+}
+
+.flow-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 900px) {
+  .flow-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.mermaid-wrap {
+  min-height: 200px;
+  overflow: auto;
+}
+
+.flow-step-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.flow-step-btn:hover {
+  border-color: var(--accent);
+}
+
+.flow-detail {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--bg-soft);
+  border-radius: var(--radius);
+}
+
+.howto-step {
+  margin-bottom: 24px;
+  padding-left: 12px;
+  border-left: 3px solid var(--accent);
+}
+
+.modify-warn {
+  padding: 12px;
+  background: rgba(210, 153, 34, 0.15);
+  border-radius: var(--radius);
+}
+
+.modify-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.modify-card {
+  padding: 14px;
+  background: var(--bg-soft);
+  border-radius: var(--radius);
+}
+
+.modify-advanced .modify-card {
+  border: 1px dashed var(--warning);
+}
+
+.charts-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.chart-box {
+  min-height: 280px;
+  position: relative;
+}
+
+@media (max-width: 768px) {
+  .charts-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.graph-network {
+  height: 420px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+}
+
+.graph-node-panel {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--bg-soft);
+  border-radius: var(--radius);
+  min-height: 80px;
+}
+
+.presentation-mini {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
 /* --------------------------------------------------------------------- footer */
 footer {
   text-align: center;
@@ -674,6 +852,57 @@ footer {
   font-size: 12px;
   border-top: 1px solid var(--border);
   margin-top: 40px;
+}
+
+.chat-messages {
+  max-height: 360px;
+  overflow-y: auto;
+  margin: 12px 0;
+  padding: 8px;
+  background: var(--bg-soft);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.chat-msg {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  font-size: 14px;
+}
+
+.chat-msg-user {
+  background: rgba(63, 185, 80, 0.12);
+  margin-left: 12%;
+}
+
+.chat-msg-assistant,
+.chat-msg-system {
+  background: var(--card);
+  margin-right: 8%;
+}
+
+.chat-form {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-form input {
+  flex: 1;
+}
+
+.chat-citations {
+  margin-top: 12px;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.flow-cmd {
+  display: block;
+  font-size: 11px;
+  margin-top: 4px;
+  opacity: 0.85;
 }
 
 /* --------------------------------------------------------------------- mobile */

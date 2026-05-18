@@ -70,6 +70,12 @@ FRAMEWORK_FILES: Dict[str, str] = {
 
 
 # Bardziej miękkie wskazówki - zawartość pliku
+_MANIFEST_FILENAMES = frozenset({
+    "go.mod", "go.sum", "package.json", "package-lock.json",
+    "requirements.txt", "pyproject.toml", "Pipfile", "Cargo.toml",
+    "composer.json", "Gemfile", "pom.xml", "build.gradle",
+})
+
 DEPENDENCY_PATTERNS: Dict[str, str] = {
     r"\bdjango\b": "Django",
     r"\bflask\b": "Flask",
@@ -182,7 +188,7 @@ class StaticAnalyzer:
             ext_counter[ext] += 1
             result.total_files += 1
 
-            # Próbujemy policzyć linie i wykryć zależności
+            # Próbujemy policzyć linie
             try:
                 text = p.read_text(encoding="utf-8", errors="ignore")
             except Exception:  # noqa: BLE001
@@ -190,10 +196,12 @@ class StaticAnalyzer:
 
             total_lines += text.count("\n") + 1
 
-            lower = text.lower()
-            for pattern, label in DEPENDENCY_PATTERNS.items():
-                if re.search(pattern, lower):
-                    dep_set.add(label)
+            # Zależności tylko z manifestów (nie vendor / cały kod)
+            if name in _MANIFEST_FILENAMES or name.endswith(".mod"):
+                lower = text.lower()
+                for pattern, label in DEPENDENCY_PATTERNS.items():
+                    if re.search(pattern, lower):
+                        dep_set.add(label)
 
             # Próbka pierwszego poziomu katalogu (do "structure")
             rel = p.relative_to(repo_path)

@@ -1,4 +1,4 @@
-/* Repo Opowieść — interactive zero-tech presentation UI */
+/* Repo Opowieść — interactive education guide UI */
 (() => {
   "use strict";
 
@@ -6,12 +6,25 @@
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
   let lastResult = null;
-  let currentDeck = null;
+  let currentPack = null;
+  let chartInstances = [];
+  let visNetwork = null;
   let slideIndex = 0;
 
+  const GROUP_COLORS = {
+    people: "#58a6ff",
+    core: "#3fb950",
+    infra: "#d29922",
+    library: "#a371f7",
+    audio: "#f778ba",
+    apps: "#79c0ff",
+    ai: "#ff7b72",
+    default: "#8b949e",
+  };
+
   if (window.mermaid) {
-    const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    window.mermaid.initialize({ startOnLoad: false, theme: isDark ? "dark" : "default", securityLevel: "loose" });
+    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    window.mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "default", securityLevel: "loose" });
   }
 
   $$(".tab").forEach((btn) => {
@@ -21,6 +34,19 @@
       $$(".panel").forEach((p) => p.classList.toggle("panel-active", p.id === `tab-${tab}`));
       if (tab === "history") refreshHistory();
       if (tab === "diag") refreshDiagnostics();
+      if (tab === "chat") refreshChatHint();
+    });
+  });
+
+  $$(".section-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const sec = btn.dataset.section;
+      $$(".section-btn").forEach((b) => b.classList.toggle("section-active", b === btn));
+      $$(".edu-section").forEach((el) => {
+        el.classList.toggle("section-visible", el.id === `sec-${sec}`);
+      });
+      if (sec === "graph") renderGraph(currentPack);
+      if (sec === "flow") renderFlowDiagram(currentPack);
     });
   });
 
@@ -28,17 +54,14 @@
     const pill = $("#health-pill");
     const dot = pill.querySelector(".dot");
     const label = pill.querySelector(".label");
-    dot.className = "dot dot-unknown";
-    label.textContent = "Sprawdzam Ollamę…";
     try {
-      const res = await fetch("/api/health");
-      const data = await res.json();
-      if (data.ollama && (!data.missing_models || data.missing_models.length === 0)) {
+      const data = await (await fetch("/api/health")).json();
+      if (data.ollama && (!data.missing_models || !data.missing_models.length)) {
         dot.className = "dot dot-ok";
         label.textContent = `Ollama OK · ${data.models_available.length} modeli`;
       } else if (data.ollama) {
         dot.className = "dot dot-warn";
-        label.textContent = `Brak modelu: ${(data.missing_models || []).join(", ")}`;
+        label.textContent = `Brak: ${(data.missing_models || []).join(", ")}`;
       } else {
         dot.className = "dot dot-bad";
         label.textContent = "Ollama niedostępna";
@@ -65,36 +88,54 @@
     $("#progress-text").textContent = text;
   }
 
+  function getPack(data) {
+    if (data.education_pack && Object.keys(data.education_pack).length) {
+      return data.education_pack;
+    }
+    const ld = data.lesson_deck || {};
+    return {
+      title: ld.title,
+      essence: ld.essence,
+      summary_3: ld.summary_3 || [],
+      overview: {},
+      use_cases: [],
+      flow_steps: [],
+      flow_mermaid: "",
+      install_flow_mermaid: "",
+      howto: [],
+      modify_guide: {},
+      charts: {},
+      dependency_graph: {},
+      story_slides: ld.slides || [],
+      quiz: ld.quiz || [],
+    };
+  }
+
   $("#analyze-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     clearAlert();
     $("#results").hidden = true;
-
     const url = $("#repo-url").value.trim();
     if (!url) {
       showAlert("Podaj adres projektu.");
       return;
     }
-
-    const payload = {
-      url,
-      force_reclone: $("#force-reclone").checked,
-      include_technical: $("#include-technical").checked,
-    };
-
-    setProgress("Pobieram projekt i piszę opowieść… To może potrwać kilka minut.");
+    setProgress("Pobieram projekt i tworzę przewodnik (diagramy, instrukcja, wykresy)… Zwykle 2–4 minuty.");
     $("#analyze-btn").disabled = true;
-
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          url,
+          force_reclone: $("#force-reclone").checked,
+          include_technical: $("#include-technical").checked,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || res.statusText);
       lastResult = data;
-      renderResult(data);
+      renderEducation(data);
     } catch (e) {
       showAlert(`Błąd: ${e.message}`);
     } finally {
@@ -103,209 +144,368 @@
     }
   });
 
-  function renderResult(data) {
+  function renderEducation(data) {
+    currentPack = getPack(data);
     $("#results").hidden = false;
-    currentDeck = data.lesson_deck || null;
-    slideIndex = 0;
-
     $("#result-meta").innerHTML = `
-      <span><strong>Projekt:</strong> <a href="${data.repo_info.url}" target="_blank" rel="noopener">${data.repo_info.url}</a></span>
-      <span><strong>Czas:</strong> ${data.duration_s}s</span>
-    `;
+      <span><strong>Projekt:</strong> <a href="${data.repo_info.url}" target="_blank" rel="noopener">${escapeHtml(data.repo_info.url)}</a></span>
+      <span><strong>Czas:</strong> ${data.duration_s}s</span>`;
 
-    renderDeckIntro(currentDeck);
-    renderSlide();
-    renderQuiz(currentDeck?.quiz || []);
+    const p = currentPack;
+    $("#guide-header").innerHTML = `
+      <p class="essence">${escapeHtml(p.essence || "")}</p>
+      <h2>${escapeHtml(p.title || "Przewodnik")}</h2>
+      <ul class="summary-list">${(p.summary_3 || []).filter(Boolean).map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`;
 
-    const hasTechnical = data.include_technical || (data.llm && Object.keys(data.llm).length > 0);
-    $("#technical-details").open = false;
-    if (hasTechnical || data.static) {
-      renderTechnical(data);
-    }
+    renderOverview(p);
+    renderUseCases(p);
+    renderFlow(p);
+    renderHowto(p);
+    renderModify(p);
+    renderCharts(p);
+    renderGraph(p);
+    renderStory(p);
+    renderTechnical(data);
 
+    $$(".section-btn").forEach((b, i) => b.classList.toggle("section-active", i === 0));
+    $$(".edu-section").forEach((el) => el.classList.toggle("section-visible", el.id === "sec-overview"));
     $("#results").scrollIntoView({ behavior: "smooth" });
   }
 
-  function renderDeckIntro(deck) {
-    const el = $("#deck-intro");
-    if (!deck || !deck.slides?.length) {
-      el.innerHTML = "<p class='muted'>Nie udało się wygenerować prezentacji.</p>";
-      return;
-    }
-    const summary = (deck.summary_3 || []).filter(Boolean).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
-    el.innerHTML = `
-      <p class="essence">${escapeHtml(deck.essence || "")}</p>
-      <h2>${escapeHtml(deck.title || "Opowieść o projekcie")}</h2>
-      ${summary ? `<ul class="summary-list">${summary}</ul>` : ""}
-      <p class="muted">Użyj przycisków poniżej, aby przejść przez sceny jedna po drugiej.</p>
+  function renderOverview(p) {
+    const ov = p.overview || {};
+    $("#sec-overview").innerHTML = `
+      <h3>📋 Przegląd projektu</h3>
+      ${block("Czym jest", ov.what)}
+      ${block("Po co powstał", ov.why)}
+      ${block("Jak działa (głębiej)", ov.how_it_works)}
+      ${block("Ograniczenia", ov.limitations)}
     `;
   }
 
-  function renderSlide() {
-    const slides = currentDeck?.slides || [];
-    const stage = $("#slide-stage");
-    if (!slides.length) {
-      stage.innerHTML = "<p>Brak slajdów.</p>";
-      return;
-    }
+  function block(title, text) {
+    if (!text) return "";
+    return `<div class="edu-block"><h4>${escapeHtml(title)}</h4><p>${escapeHtml(text)}</p></div>`;
+  }
 
-    slideIndex = Math.max(0, Math.min(slideIndex, slides.length - 1));
-    const s = slides[slideIndex];
-    const glossary = (s.glossary || [])
-      .map(
-        (g) =>
-          `<button type="button" class="glossary-btn" data-def="${escapeAttr(g.definition)}">${escapeHtml(g.term)}</button>`
-      )
-      .join(" ");
+  function renderUseCases(p) {
+    const items = p.use_cases || [];
+    $("#sec-use_cases").innerHTML = `
+      <h3>🎯 Kiedy tego użyć?</h3>
+      <div class="use-case-grid">
+        ${items.map((u) => `
+          <article class="use-case-card">
+            <span class="uc-emoji">${escapeHtml(u.emoji || "📌")}</span>
+            <h4>${escapeHtml(u.title)}</h4>
+            <p><strong>Sytuacja:</strong> ${escapeHtml(u.scenario)}</p>
+            <p class="uc-benefit"><strong>Korzyść:</strong> ${escapeHtml(u.benefit)}</p>
+          </article>`).join("") || "<p class='muted'>Brak danych.</p>"}
+      </div>`;
+  }
 
-    stage.innerHTML = `
-      <article class="slide-card slide-fade">
-        <div class="slide-emoji">${escapeHtml(s.emoji || "📖")}</div>
-        <h3 class="slide-title">${escapeHtml(s.title || "")}</h3>
-        <p class="slide-body">${escapeHtml(s.body || "")}</p>
-        ${s.analogy ? `<p class="slide-analogy"><strong>Analogia:</strong> ${escapeHtml(s.analogy)}</p>` : ""}
-        ${s.for_you ? `<p class="slide-for-you"><strong>Co to dla Ciebie:</strong> ${escapeHtml(s.for_you)}</p>` : ""}
-        ${s.more_detail ? `<details class="slide-more"><summary>Chcę więcej szczegółów</summary><p>${escapeHtml(s.more_detail)}</p></details>` : ""}
-        ${glossary ? `<div class="glossary-row"><span class="muted">Słowniczek:</span> ${glossary}</div>` : ""}
-      </article>
-    `;
-
-    stage.querySelectorAll(".glossary-btn").forEach((btn) => {
+  function renderFlow(p) {
+    const steps = p.flow_steps || [];
+    $("#sec-flow").innerHTML = `
+      <h3>🔄 Jak to działa — krok po kroku</h3>
+      <div class="flow-layout">
+        <div class="mermaid-wrap"><div class="mermaid" id="flow-mermaid"></div></div>
+        <div class="flow-steps-list" id="flow-steps-list">
+          ${steps.map((s, i) => `
+            <button type="button" class="flow-step-btn" data-idx="${i}">
+              <strong>${i + 1}. ${escapeHtml(s.title)}</strong>
+              <span>${escapeHtml(s.description)}</span>
+              ${s.tip ? `<em>💡 ${escapeHtml(s.tip)}</em>` : ""}
+            </button>`).join("")}
+        </div>
+      </div>
+      ${p.install_flow_mermaid ? `<h4>Schemat instalacji</h4><div class="mermaid-wrap"><div class="mermaid" id="install-flow-mermaid"></div></div>` : ""}
+      <div class="flow-detail" id="flow-detail"></div>`;
+    renderFlowDiagram(p);
+    renderInstallFlowDiagram(p);
+    $("#flow-steps-list")?.querySelectorAll(".flow-step-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
-        alert(btn.dataset.def || "");
+        const s = steps[parseInt(btn.dataset.idx, 10)];
+        $("#flow-detail").innerHTML = `<h4>${escapeHtml(s.title)}</h4><p>${escapeHtml(s.description)}</p>`;
       });
     });
-
-    $("#slide-counter").textContent = `${slideIndex + 1} / ${slides.length}`;
-    const pct = ((slideIndex + 1) / slides.length) * 100;
-    $("#progress-bar-fill").style.width = `${pct}%`;
-    $("#btn-prev").disabled = slideIndex === 0;
-    $("#btn-next").textContent = slideIndex >= slides.length - 1 ? "Zakończ →" : "Dalej →";
+    if (steps[0]) steps[0] && ($("#flow-detail").innerHTML = `<p>${escapeHtml(steps[0].description)}</p>`);
   }
 
-  $("#btn-prev").addEventListener("click", () => {
-    slideIndex -= 1;
-    renderSlide();
-  });
-
-  $("#btn-next").addEventListener("click", () => {
-    const total = currentDeck?.slides?.length || 0;
-    if (slideIndex < total - 1) {
-      slideIndex += 1;
-      renderSlide();
-    } else {
-      $("#quiz-card").scrollIntoView({ behavior: "smooth" });
+  async function renderMermaidInto(el, code, prefix) {
+    if (!el || !window.mermaid) return;
+    el.textContent = code;
+    try {
+      const { svg } = await window.mermaid.render(`${prefix}_${Date.now()}`, code);
+      el.innerHTML = svg;
+    } catch {
+      el.textContent = "Nie udało się narysować diagramu.";
     }
-  });
+  }
 
-  document.addEventListener("keydown", (ev) => {
-    if ($("#results").hidden) return;
-    if (ev.key === "ArrowRight") $("#btn-next").click();
-    if (ev.key === "ArrowLeft" && !$("#btn-prev").disabled) $("#btn-prev").click();
-  });
+  async function renderFlowDiagram(p) {
+    const el = document.getElementById("flow-mermaid");
+    await renderMermaidInto(el, p.flow_mermaid || "flowchart TD\n    A[Brak diagramu]", "flow");
+  }
 
-  $("#btn-fullscreen").addEventListener("click", () => {
-    const card = $("#presentation-card");
-    if (!document.fullscreenElement) {
-      card.requestFullscreen?.();
-    } else {
-      document.exitFullscreen?.();
+  async function renderInstallFlowDiagram(p) {
+    const el = document.getElementById("install-flow-mermaid");
+    if (!el || !p.install_flow_mermaid) return;
+    await renderMermaidInto(el, p.install_flow_mermaid, "install");
+  }
+
+  function renderHowto(p) {
+    const steps = p.howto || [];
+    $("#sec-howto").innerHTML = `
+      <h3>🛠️ Instrukcja instalacji i uruchomienia</h3>
+      ${steps.map((h) => `
+        <div class="howto-step">
+          <h4>Krok ${h.step}: ${escapeHtml(h.title)}</h4>
+          <p>${escapeHtml(h.body)}</p>
+          ${(h.commands || []).length ? `<pre class="code-block">${(h.commands || []).map(escapeHtml).join("\n")}</pre>` : ""}
+        </div>`).join("") || "<p class='muted'>Brak instrukcji.</p>"}`;
+  }
+
+  function renderModify(p) {
+    const mg = p.modify_guide || {};
+    const easy = mg.easy || [];
+    const adv = mg.advanced || [];
+    $("#sec-modify").innerHTML = `
+      <h3>✏️ Co możesz zmienić?</h3>
+      <p class="modify-warn">⚠️ ${escapeHtml(mg.warning || "Twórz kopię zapasową przed większymi zmianami.")}</p>
+      <h4>Bez programowania</h4>
+      <div class="modify-grid">${easy.map(itemCard).join("")}</div>
+      <h4>Wymaga wiedzy technicznej</h4>
+      <div class="modify-grid modify-advanced">${adv.map(itemCard).join("")}</div>`;
+  }
+
+  function itemCard(item) {
+    return `<article class="modify-card"><h5>${escapeHtml(item.title)}</h5><p>${escapeHtml(item.body)}</p></article>`;
+  }
+
+  function renderCharts(p) {
+    chartInstances.forEach((c) => c.destroy());
+    chartInstances = [];
+    const charts = p.charts || {};
+    $("#sec-charts").innerHTML = `
+      <h3>📊 Wykresy</h3>
+      <div class="charts-row">
+        <div class="chart-box"><canvas id="chart-lang"></canvas></div>
+        <div class="chart-box"><canvas id="chart-comp"></canvas></div>
+      </div>
+      <p class="muted chart-metrics" id="chart-metrics"></p>`;
+    const metrics = charts.metrics || {};
+    $("#chart-metrics").textContent = `Plików: ${metrics.files ?? "—"} · Linii kodu: ${(metrics.lines ?? 0).toLocaleString("pl-PL")}`;
+
+    const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const fg = isDark ? "#e6edf3" : "#1f2328";
+    const opts = {
+      responsive: true,
+      plugins: { legend: { labels: { color: fg } } },
+    };
+
+    const lang = charts.languages;
+    if (lang?.labels?.length && window.Chart) {
+      chartInstances.push(new Chart($("#chart-lang"), {
+        type: "doughnut",
+        data: {
+          labels: lang.labels,
+          datasets: [{ data: lang.values, backgroundColor: ["#3fb950", "#58a6ff", "#d29922", "#f778ba", "#a371f7"] }],
+        },
+        options: { ...opts, plugins: { ...opts.plugins, title: { display: true, text: "Języki (pliki)", color: fg } } },
+      }));
     }
-  });
+    const comp = charts.composition;
+    if (comp?.labels?.length && window.Chart) {
+      chartInstances.push(new Chart($("#chart-comp"), {
+        type: "bar",
+        data: {
+          labels: comp.labels,
+          datasets: [{ label: "Liczba plików", data: comp.values, backgroundColor: "#58a6ff" }],
+        },
+        options: {
+          ...opts,
+          scales: { x: { ticks: { color: fg } }, y: { ticks: { color: fg } } },
+          plugins: { ...opts.plugins, title: { display: true, text: "Skład projektu", color: fg } },
+        },
+      }));
+    }
+  }
 
-  function renderQuiz(questions) {
-    const card = $("#quiz-card");
-    const block = $("#quiz-block");
-    if (!questions.length) {
-      card.hidden = true;
+  function renderGraph(p) {
+    const container = $("#sec-graph");
+    container.innerHTML = `
+      <h3>🕸️ Mapa połączeń — kliknij węzeł po wyjaśnienie</h3>
+      <div id="graph-network" class="graph-network"></div>
+      <div id="graph-node-panel" class="graph-node-panel muted">Kliknij element na mapie.</div>`;
+
+    const g = p.dependency_graph || {};
+    const nodes = (g.nodes || []).map((n) => ({
+      id: n.id,
+      label: n.label,
+      title: n.role,
+      group: n.group,
+      description: n.description,
+    }));
+    const edges = (g.edges || []).map((e) => ({ from: e.from, to: e.to, label: e.label || "" }));
+
+    if (!window.vis || !nodes.length) {
+      $("#graph-network").textContent = "Brak danych mapy.";
       return;
     }
-    card.hidden = false;
-    block.innerHTML = questions
-      .map(
-        (q, qi) => `
-      <div class="quiz-item" data-q="${qi}" data-correct="${q.correct_index}">
-        <p class="quiz-q">${escapeHtml(q.question)}</p>
-        <div class="quiz-options">
-          ${(q.options || [])
-            .map(
-              (opt, oi) =>
-                `<button type="button" class="quiz-opt" data-oi="${oi}">${escapeHtml(opt)}</button>`
-            )
-            .join("")}
-        </div>
-        <p class="quiz-feedback" hidden></p>
-      </div>`
-      )
-      .join("");
 
-    block.querySelectorAll(".quiz-opt").forEach((btn) => {
+    const visNodes = new vis.DataSet(
+      nodes.map((n) => ({
+        id: n.id,
+        label: n.label,
+        color: GROUP_COLORS[n.group] || GROUP_COLORS.default,
+        font: { color: "#fff", size: 14 },
+      }))
+    );
+    const visEdges = new vis.DataSet(edges.map((e) => ({ ...e, arrows: "to", color: { color: "#8b949e" } })));
+
+    if (visNetwork) {
+      visNetwork.destroy();
+    }
+    visNetwork = new vis.Network(
+      document.getElementById("graph-network"),
+      { nodes: visNodes, edges: visEdges },
+      {
+        physics: { stabilization: true, barnesHut: { gravitationalConstant: -3000 } },
+        interaction: { hover: true },
+      }
+    );
+
+    const panel = $("#graph-node-panel");
+    visNetwork.on("click", (params) => {
+      if (!params.nodes.length) return;
+      const id = params.nodes[0];
+      const node = nodes.find((n) => n.id === id);
+      if (node) {
+        panel.innerHTML = `<h4>${escapeHtml(node.label)}</h4><p><strong>Rola:</strong> ${escapeHtml(node.title)}</p><p>${escapeHtml(node.description)}</p>`;
+      }
+    });
+  }
+
+  function renderStory(p) {
+    const slides = p.story_slides || [];
+    slideIndex = 0;
+    $("#sec-story").innerHTML = `
+      <h3>📖 Opowieść — krótkie podsumowanie</h3>
+      <div class="presentation-mini">
+        <span id="story-counter">1 / ${slides.length || 1}</span>
+        <div id="story-stage"></div>
+        <div class="slide-nav">
+          <button type="button" class="btn-secondary" id="story-prev">←</button>
+          <button type="button" class="btn-primary" id="story-next">→</button>
+        </div>
+      </div>
+      <div id="story-quiz"></div>`;
+    renderStorySlide(slides);
+    $("#story-prev")?.addEventListener("click", () => {
+      slideIndex = Math.max(0, slideIndex - 1);
+      renderStorySlide(slides);
+    });
+    $("#story-next")?.addEventListener("click", () => {
+      slideIndex = Math.min(slides.length - 1, slideIndex + 1);
+      renderStorySlide(slides);
+    });
+    renderQuiz(p.quiz || [], "#story-quiz");
+  }
+
+  function renderStorySlide(slides) {
+    if (!slides.length) {
+      $("#story-stage").innerHTML = "<p>Brak slajdów.</p>";
+      return;
+    }
+    const s = slides[slideIndex];
+    $("#story-counter").textContent = `${slideIndex + 1} / ${slides.length}`;
+    $("#story-stage").innerHTML = `
+      <div class="slide-card">
+        <div class="slide-emoji">${escapeHtml(s.emoji || "📖")}</div>
+        <h4>${escapeHtml(s.title)}</h4>
+        <p>${escapeHtml(s.body)}</p>
+        ${s.analogy ? `<p class="slide-analogy"><strong>Analogia:</strong> ${escapeHtml(s.analogy)}</p>` : ""}
+        ${s.for_you ? `<p class="slide-for-you">${escapeHtml(s.for_you)}</p>` : ""}
+      </div>`;
+  }
+
+  function renderQuiz(questions, sel) {
+    const el = $(sel);
+    if (!el || !questions.length) {
+      if (el) el.innerHTML = "";
+      return;
+    }
+    el.innerHTML = `<h4>📝 Quiz</h4>${questions.map((q, qi) => `
+      <div class="quiz-item" data-correct="${q.correct_index}">
+        <p>${escapeHtml(q.question)}</p>
+        <div class="quiz-options">${(q.options || []).map((o, oi) =>
+          `<button type="button" class="quiz-opt" data-oi="${oi}">${escapeHtml(o)}</button>`).join("")}</div>
+        <p class="quiz-feedback" hidden></p>
+      </div>`).join("")}`;
+    el.querySelectorAll(".quiz-opt").forEach((btn) => {
       btn.addEventListener("click", () => {
         const item = btn.closest(".quiz-item");
         const correct = parseInt(item.dataset.correct, 10);
         const chosen = parseInt(btn.dataset.oi, 10);
-        const fb = item.querySelector(".quiz-feedback");
         item.querySelectorAll(".quiz-opt").forEach((b) => (b.disabled = true));
+        const fb = item.querySelector(".quiz-feedback");
         fb.hidden = false;
-        fb.textContent =
-          chosen === correct ? "✅ Tak, dobrze!" : "💡 Nie tym razem — ale to tylko powtórka materiału.";
-        fb.className = "quiz-feedback " + (chosen === correct ? "ok" : "warn");
+        fb.textContent = chosen === correct ? "✅ Dobrze!" : "💡 Spróbuj jeszcze raz przeczytać przewodnik.";
       });
     });
   }
 
   function renderTechnical(data) {
+    const sec = $("#sec-technical");
+    const hasTech = data.llm && Object.keys(data.llm).length > 0;
     const s = data.static || {};
-    const kv = (k, v) => `<div class="kv"><span class="k">${k}</span><span class="v">${v}</span></div>`;
-    $("#static-block").innerHTML = `
-      <div class="kv-grid">
-        ${kv("Plików", s.total_files ?? "—")}
-        ${kv("Linii", (s.total_lines ?? 0).toLocaleString("pl-PL"))}
-      </div>`;
-
+    sec.innerHTML = `
+      <h3>🔧 Szczegóły techniczne</h3>
+      <p class="muted">Dla osób, które chcą głębiej — diagramy Mermaid, statystyki, analiza LLM.</p>
+      <h4>Statystyki</h4>
+      <div id="tech-static"></div>
+      <h4>Diagramy Mermaid</h4>
+      <div class="mermaid" id="tech-overview"></div>
+      <div class="mermaid" id="tech-tree"></div>
+      <div id="tech-llm" ${hasTech ? "" : 'hidden'}></div>
+      <div id="tech-polish" ${data.polish_report ? "" : "hidden"}></div>`;
+    $("#tech-static").innerHTML = `<p>Plików: ${s.total_files}, linii: ${(s.total_lines || 0).toLocaleString("pl-PL")}</p>`;
     if (data.diagrams) {
-      renderDiagram("diagram-overview", data.diagrams.overview);
-      renderDiagram("diagram-tree", data.diagrams.tree);
+      renderMermaid("tech-overview", data.diagrams.overview);
+      renderMermaid("tech-tree", data.diagrams.tree);
     }
-
-    const hasLlm = data.llm && Object.keys(data.llm).length > 0;
-    $("#card-llm").hidden = !hasLlm;
-    if (hasLlm) {
-      const sec = (title, body) =>
-        `<div class="llm-section"><h5>${title}</h5><div>${escapeHtml(body || "—")}</div></div>`;
-      $("#llm-block").innerHTML =
-        sec("Architektura", data.llm.architecture) +
-        sec("Moduły", data.llm.main_modules) +
-        sec("Jakość", data.llm.quality_assessment);
+    if (hasTech) {
+      $("#tech-llm").innerHTML = `<h4>Analiza LLM</h4><pre class="code-block">${escapeHtml(JSON.stringify(data.llm, null, 2).slice(0, 8000))}</pre>`;
     }
-
-    const hasPolish = !!data.polish_report;
-    $("#card-polish").hidden = !hasPolish;
-    if (hasPolish && window.marked) {
-      $("#polish-block").innerHTML = window.marked.parse(data.polish_report);
+    if (data.polish_report && window.marked) {
+      $("#tech-polish").innerHTML = `<h4>Raport Markdown</h4><div class="markdown-body">${window.marked.parse(data.polish_report)}</div>`;
     }
   }
 
-  function renderDiagram(elId, code) {
-    const el = document.getElementById(elId);
-    if (!el || !window.mermaid || !code) return;
-    el.textContent = code;
-    const renderId = `m_${elId}_${Date.now()}`;
-    window.mermaid.render(renderId, code).then(({ svg }) => {
+  async function renderMermaid(id, code) {
+    const el = document.getElementById(id);
+    if (!el || !code || !window.mermaid) return;
+    try {
+      const { svg } = await window.mermaid.render(`${id}_${Date.now()}`, code);
       el.innerHTML = svg;
-    }).catch(() => {
+    } catch {
       el.textContent = "(diagram niedostępny)";
-    });
+    }
   }
+
+  $("#btn-download-html").addEventListener("click", () => {
+    if (!lastResult?.id) return;
+    window.open(`/api/reports/${lastResult.id}/export.html`, "_blank");
+  });
 
   $("#btn-download-md").addEventListener("click", async () => {
     if (!lastResult) return;
     try {
       const res = await fetch(`/api/reports/${lastResult.id}/markdown`);
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
-      downloadText(await res.text(), `${lastResult.repo_info.slug}_opowiesc.md`);
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail);
+      downloadText(await res.text(), `${lastResult.repo_info.slug}_przewodnik.md`);
     } catch (e) {
-      showAlert(`Pobieranie nie powiodło się: ${e.message}`);
+      showAlert(`Pobieranie: ${e.message}`);
     }
   });
 
@@ -325,26 +525,22 @@
       const url = q ? `/api/reports?q=${encodeURIComponent(q)}` : "/api/reports";
       const data = await (await fetch(url)).json();
       if (!data.items?.length) {
-        list.innerHTML = "<div class='history-empty'>Brak zapisanych opowieści.</div>";
+        list.innerHTML = "<div class='history-empty'>Brak zapisów.</div>";
         return;
       }
-      list.innerHTML = data.items
-        .map(
-          (r) => `
+      list.innerHTML = data.items.map((r) => `
         <div class="history-item" data-id="${r.id}">
           <div class="info">
-            <div class="url">${escapeHtml(r.presentation_title || r.url || r.slug)}</div>
-            <div class="desc">${r.created_at_iso || "?"}</div>
+            <div class="url">${escapeHtml(r.presentation_title || r.url)}</div>
+            <div class="desc">${r.created_at_iso}</div>
           </div>
           <div class="actions">
             <button type="button" class="btn-icon" data-act="view">👁️ Otwórz</button>
             <button type="button" class="btn-icon" data-act="del">🗑️</button>
           </div>
-        </div>`
-        )
-        .join("");
+        </div>`).join("");
     } catch (e) {
-      list.innerHTML = `<div class='history-empty'>Błąd: ${escapeHtml(e.message)}</div>`;
+      list.innerHTML = `<div class='history-empty'>${escapeHtml(e.message)}</div>`;
     }
   }
 
@@ -363,56 +559,102 @@
     }
     if (btn.dataset.act === "view") {
       const data = await (await fetch(`/api/reports/${id}`)).json();
-      lastResult = {
-        id: data.id,
-        duration_s: 0,
-        repo_info: data.repo_info,
-        static: data.static,
-        llm: data.llm,
-        diagrams: data.diagrams || {},
-        polish_report: data.polish_report,
-        lesson_deck: data.lesson_deck,
-      };
+      lastResult = { ...data, duration_s: 0, repo_info: data.repo_info, static: data.static, llm: data.llm, diagrams: data.diagrams, polish_report: data.polish_report, education_pack: data.education_pack, lesson_deck: data.lesson_deck };
       $$(".tab").forEach((b) => b.classList.toggle("tab-active", b.dataset.tab === "analyze"));
       $$(".panel").forEach((p) => p.classList.toggle("panel-active", p.id === "tab-analyze"));
-      renderResult(lastResult);
+      renderEducation(lastResult);
+    }
+  });
+
+  $("#diag-refresh").addEventListener("click", refreshDiagnostics);
+  $("#profile-refresh").addEventListener("click", async () => {
+    $("#diag-kb").textContent = "Zbieram profil systemu…";
+    try {
+      const res = await fetch("/api/system-profile/refresh", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      $("#diag-kb").textContent = `Profil zaktualizowany.\n${JSON.stringify(data, null, 2)}`;
+      refreshDiagnostics();
+    } catch (e) {
+      $("#diag-kb").textContent = `Błąd: ${e.message}`;
     }
   });
 
   async function refreshDiagnostics() {
     try {
-      const [h, c] = await Promise.all([
+      const [h, c, kb] = await Promise.all([
         fetch("/api/health").then((r) => r.json()),
         fetch("/api/config").then((r) => r.json()),
+        fetch("/api/knowledge/stats").then((r) => r.json()),
       ]);
       $("#diag-output").textContent = JSON.stringify(h, null, 2);
       $("#diag-config").textContent = JSON.stringify(c, null, 2);
+      $("#diag-kb").textContent = JSON.stringify(kb, null, 2);
     } catch (e) {
-      $("#diag-output").textContent = `Błąd: ${e.message}`;
+      $("#diag-output").textContent = String(e);
     }
   }
 
-  $("#diag-refresh").addEventListener("click", refreshDiagnostics);
+  let chatSessionId = null;
+  function appendChatMessage(role, text) {
+    const box = $("#chat-messages");
+    const div = document.createElement("div");
+    div.className = `chat-msg chat-msg-${role}`;
+    div.textContent = text;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+  }
 
-  function debounce(fn, delay) {
+  function refreshChatHint() {
+    fetch("/api/knowledge/stats")
+      .then((r) => r.json())
+      .then((s) => {
+        if (!s.chunks && !$("#chat-messages").children.length) {
+          appendChatMessage("system", `Baza: ${s.guides || 0} przewodników, ${s.chunks || 0} fragmentów. Zadaj pytanie.`);
+        }
+      })
+      .catch(() => {});
+  }
+
+  $("#chat-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const input = $("#chat-input");
+    const msg = input.value.trim();
+    if (!msg) return;
+    input.value = "";
+    appendChatMessage("user", msg);
+    appendChatMessage("assistant", "…");
+    const pending = $("#chat-messages").lastElementChild;
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: msg, session_id: chatSessionId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      chatSessionId = data.session_id;
+      pending.textContent = data.answer || "(brak odpowiedzi)";
+      const cites = (data.citations || [])
+        .map((c) => `• [${c.guide_title} / ${c.section}] ${(c.excerpt || "").slice(0, 120)}…`)
+        .join("\n");
+      $("#chat-citations").textContent = cites ? `Źródła:\n${cites}` : "";
+    } catch (e) {
+      pending.textContent = `Błąd: ${e.message}`;
+    }
+  });
+
+  function debounce(fn, ms) {
     let t;
-    return (...args) => {
+    return (...a) => {
       clearTimeout(t);
-      t = setTimeout(() => fn(...args), delay);
+      t = setTimeout(() => fn(...a), ms);
     };
   }
 
   function escapeHtml(s) {
     if (s == null) return "";
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
-  function escapeAttr(s) {
-    return escapeHtml(s).replace(/'/g, "&#039;");
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
   refreshHealth();

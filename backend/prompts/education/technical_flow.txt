@@ -1,0 +1,18 @@
+Na podstawie danych projektu opisz szczegółowy przepływ techniczny instalacji i użycia.
+Zwróć JSON:
+{{
+  "flow_steps": [
+    {{"id": "...", "title": "krótki tytuł PL", "description": "2-3 zdania PL z konkretami (PulseAudio/PipeWire, ścieżki, komendy)", "tip": "wskazówka PL lub pusty string"}}
+  ]
+}}
+
+Wymagania:
+- 5-8 kroków: pobranie, zależności systemowe, kompilacja/instalacja, konfiguracja audio, wybór mikrofonu w aplikacji, codzienne użycie
+- W description wpleć nazwy narzędzi z README jeśli są (make, git, ~/.local/bin)
+- Język odpowiedzi: wyłącznie polski
+
+KOMENDY Z README:
+{commands}
+
+KONTEKST:
+{context}

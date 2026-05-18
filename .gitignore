@@ -11,9 +11,12 @@ __pycache__/
 
 # Katalogi runtime (tworzone przez setup.sh)
 data/repos/
+data/knowledge.db
+data/system-profile.json
 indexes/*.pkl
 reports/*.json
 reports/*.md
+reports/exports/
 logs/
 
 # IDE / edytory

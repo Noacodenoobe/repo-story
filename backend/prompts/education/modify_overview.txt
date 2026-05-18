@@ -1,0 +1,22 @@
+Wypisz JSON:
+{{
+  "overview": {{
+    "what": "4-6 zdań",
+    "why": "4-6 zdań",
+    "how_it_works": "5-8 zdań — głębokie wyjaśnienie prostym językiem",
+    "limitations": "3-4 zdania ograniczeń"
+  }},
+  "modify_guide": {{
+    "easy": [{{"title": "...", "body": "...", "difficulty": "easy"}}],
+    "advanced": [{{"title": "...", "body": "...", "difficulty": "advanced"}}],
+    "warning": "jedno zdanie"
+  }},
+  "graph_node_descriptions": {{"app": "opis", "user": "opis"}}
+}}
+
+Min 3 easy, 3 advanced w modify_guide.
+
+Język odpowiedzi: wyłącznie polski.
+
+KONTEKST:
+{context}

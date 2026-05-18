@@ -1,0 +1,55 @@
+Na podstawie danych o projekcie stwórz kompletny przewodnik edukacyjny w JSON.
+
+KONTEKST PROJEKTU:
+{context}
+
+WYKRYTE KOMENDY Z README (jeśli są — użyj ich w howto):
+{commands}
+
+WYKRYTE FUNKCJE Z README:
+{features}
+
+WYMAGANA STRUKTURA JSON:
+{{
+  "title": "tytuł przewodnika po polsku",
+  "essence": "jedno zdanie — o co chodzi",
+  "summary_3": ["zdanie 1", "zdanie 2", "zdanie 3"],
+  "overview": {{
+    "what": "3-5 zdań: czym jest projekt",
+    "why": "3-5 zdań: jaki problem rozwiązuje",
+    "how_it_works": "4-6 zdań: jak działa pod spodem, prostym językiem",
+    "limitations": "2-3 zdania: ograniczenia (system, sprzęt, wiedza)"
+  }},
+  "use_cases": [
+    {{"emoji": "🎤", "title": "tytuł", "scenario": "kiedy użyć — konkretna sytuacja", "benefit": "co zyskujesz"}}
+  ],
+  "flow_steps": [
+    {{"id": "start", "title": "krótki tytuł kroku", "description": "co robisz (2-3 zdania)", "tip": "wskazówka"}}
+  ],
+  "howto": [
+    {{"step": 1, "title": "tytuł", "body": "instrukcja 3-5 zdań", "commands": ["komenda jeśli jest"]}}
+  ],
+  "modify_guide": {{
+    "easy": [{{"title": "co możesz zmienić bez programowania", "body": "jak", "difficulty": "easy"}}],
+    "advanced": [{{"title": "co wymaga wiedzy technicznej", "body": "ostrzeżenie", "difficulty": "advanced"}}],
+    "warning": "jedno zdanie ostrożności przy modyfikacjach"
+  }},
+  "graph_node_descriptions": {{
+    "app": "opis roli głównego programu (2-3 zdania)",
+    "user": "opis roli użytkownika"
+  }},
+  "story_slides": [
+    {{"id": "what", "emoji": "🎯", "title": "Co to?", "body": "max 50 słów", "analogy": "analogia", "for_you": "korzyść dla Ciebie", "more_detail": "więcej", "glossary": []}}
+  ],
+  "quiz": [
+    {{"question": "pytanie", "options": ["A","B","C"], "correct_index": 0}}
+  ]
+}}
+
+WYMAGANIA:
+- Minimum 4 use_cases, 5 flow_steps, 4 howto steps
+- flow_steps w logicznej kolejności (od instalacji do codziennego użycia)
+- modify_guide: min 2 easy, min 2 advanced
+- story_slides: dokładnie 4 krótkie slajdy podsumowujące
+- quiz: 2-3 pytania
+- Pisz po polsku, konkretnie, z przykładami (Discord, Zoom, nagrywanie itp. gdy pasuje)

@@ -41,6 +41,7 @@ class AnalysisRecord:
     polish_report: str = ""
     diagrams: Dict[str, str] = field(default_factory=dict)  # nazwa -> mermaid
     lesson_deck: Dict[str, Any] = field(default_factory=dict)
+    education_pack: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -55,7 +56,25 @@ class AnalysisRecord:
             "polish_report": self.polish_report,
             "diagrams": self.diagrams,
             "lesson_deck": self.lesson_deck,
+            "education_pack": self.education_pack,
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "AnalysisRecord":
+        """Rebuild record from stored JSON."""
+        return cls(
+            id=data["id"],
+            url=data.get("url", ""),
+            slug=data.get("slug", ""),
+            created_at=data.get("created_at", 0.0),
+            repo_info=data.get("repo_info", {}),
+            static=data.get("static", {}),
+            llm=data.get("llm", {}),
+            polish_report=data.get("polish_report", ""),
+            diagrams=data.get("diagrams", {}),
+            lesson_deck=data.get("lesson_deck", {}),
+            education_pack=data.get("education_pack", {}),
+        )
 
 
 class KnowledgeBase:
@@ -95,6 +114,7 @@ class KnowledgeBase:
             polish_report=data.get("polish_report", ""),
             diagrams=data.get("diagrams", {}),
             lesson_deck=data.get("lesson_deck", {}),
+            education_pack=data.get("education_pack", {}),
         )
 
     def delete(self, record_id: str) -> bool:
@@ -115,14 +135,14 @@ class KnowledgeBase:
             except Exception as e:  # noqa: BLE001
                 logger.warning("Pomijam uszkodzony plik %s: %s", p, e)
                 continue
-            deck = data.get("lesson_deck") or {}
+            edu = data.get("education_pack") or data.get("lesson_deck") or {}
             items.append({
                 "id": data.get("id"),
                 "url": data.get("url"),
                 "slug": data.get("slug"),
                 "created_at": data.get("created_at"),
                 "created_at_iso": data.get("created_at_iso"),
-                "presentation_title": deck.get("title"),
+                "presentation_title": edu.get("title"),
                 "summary": {
                     "total_files": data.get("static", {}).get("total_files"),
                     "total_lines": data.get("static", {}).get("total_lines"),
