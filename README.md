@@ -25,7 +25,8 @@ Otwórz: **http://127.0.0.1:9743**
 - **Eksport** — Markdown i HTML offline
 - **Dyktowanie systemowe** — `scripts/system-dictation.sh` (skrót klawiszowy → STT → wklejenie tekstu)
 
-Szczegóły wdrożenia i API: `docs/AGENT_IMPLEMENTATION_LIVE_ASSISTANT.md`
+Szczegóły wdrożenia: `docs/AGENT_IMPLEMENTATION_LIVE_ASSISTANT.md` (Fazy 1–3, ukończone)  
+Kolejne kroki (A i B): `docs/AGENT_IMPLEMENTATION_PHASE_AB.md`
 
 ### Baza wiedzy — co robi, czego nie robi
 

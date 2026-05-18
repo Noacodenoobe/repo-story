@@ -1,11 +1,13 @@
 # Instrukcja wdrożenia: Repo Opowieść — asystent na żywo (Fazy 1–3)
 
-**Wersja dokumentu:** 2026-05-18  
+**Wersja dokumentu:** 2026-05-18 (zaktualizowano po sesji wdrożeniowej)  
+**Status Faz 1–3:** **UKOŃCZONE** (tag `v4.3.0-voice-assistant`, commit `687c8f6`)  
+**Następne kroki (Fazy A i B):** [`AGENT_IMPLEMENTATION_PHASE_AB.md`](./AGENT_IMPLEMENTATION_PHASE_AB.md)  
 **Projekt:** `/mnt/ollama/projekty/repo-story` (Repo Opowieść)  
 **Port:** `9743` (domyślnie, `./run.sh`)  
 **Powiązany projekt (bez zmian):** `/mnt/ollama/projekty/repo-analyzer` port `9742`  
-**Cel docelowy użytkownika:** Faza 3 — rozmowa głosowa (mówię → słyszę odpowiedź).  
-**Kolejność implementacji:** Faza 1 → Faza 2 → Faza 3 (każda kolejna **rozszerza** poprzednią, nie zastępuje).
+**Cel użytkownika (osiągnięty w v4.3):** rozmowa głosowa — mówię (🎤) → odpowiedź tekst na żywo (stream) → słyszę (TTS).  
+**Kolejność historyczna:** Faza 1 → 2 → 3 (każda **rozszerza** poprzednią). Kolejność **przyszła:** A → B (patrz dokument PHASE_AB).
 
 ---
 
@@ -44,8 +46,9 @@ git fetch origin && git status -sb && git log origin/main -3 --oneline
 | Commit / wersja | repo-story | Zawartość |
 |-----------------|------------|-----------|
 | `5eb2da8` | początek | MVP slajdy zero-tech |
-| `v4.x` (po wdrożeniu Faz 0) | EducationPack, RAG SQLite, czat, profil, HTML export, regulamin w KB |
-| Fazy 1–3 | do zrobienia | streaming, STT, TTS — patrz ten dokument |
+| `253763c` / `v4.0.0` | EducationPack, RAG SQLite, czat, profil, HTML export, regulamin w KB |
+| `687c8f6` / `v4.3.0-voice-assistant` | SSE stream, STT, TTS Piper, UX głosu, testy, dictation script |
+| Fazy A–B | plan | Supertonic, notatnik, akcje z potwierdzeniem — patrz `AGENT_IMPLEMENTATION_PHASE_AB.md` |
 
 Jeśli `git status` pokazuje wiele niezacommitowanych plików — **najpierw** uzgodnij z użytkownikiem commit/push, potem nowe funkcje.
 
@@ -80,35 +83,68 @@ Jeśli push się nie powiedzie — raportuj użytkownikowi (brak tokenu, konflik
 ```bash
 git tag -a v4.0.0 -m "Education pack, RAG chat, system profile, HTML export"
 git push origin v4.0.0
-# po Fazie 1: v4.1.0-stream, po Fazie 2: v4.2.0-voice-input, po Fazie 3: v4.3.0-voice-output
+# po Fazie 3: v4.3.0-voice-assistant (faktyczny tag na GitHub)
+# po Fazie A: v4.4.0-assistant-a (plan)
+# po Fazie B: v4.5.0-assistant-b (plan)
 ```
 
 ---
 
 ## 0.1 Dla agenta w nowej sesji — przeczytaj najpierw
 
-### 0.2 Co już istnieje (v4.0 — NIE psuj tego)
+**Jeśli wdrażasz coś NOWEGO** — czytaj najpierw ten plik (kontekst), potem **[`AGENT_IMPLEMENTATION_PHASE_AB.md`](./AGENT_IMPLEMENTATION_PHASE_AB.md)** (zadania).
+
+### 0.2 Co już istnieje (v4.3 — NIE psuj tego)
 
 | Obszar | Stan | Kluczowe pliki |
 |--------|------|----------------|
-| Przewodniki edukacyjne | Działa | `backend/app/education_generator.py`, `education_pack.py` |
-| Polski (PL-gate) | Działa | `backend/app/polish_validator.py` |
-| Eksport HTML | Działa | `backend/app/html_exporter.py`, `GET /api/reports/{id}/export.html` |
-| SQLite RAG | Działa | `backend/app/knowledge_store.py`, `data/knowledge.db` |
-| Czat tekstowy (sync) | Działa | `POST /api/chat`, `backend/app/rag_chat.py` |
-| Czat streaming (SSE) | **Faza 1 wdrożona** | `POST /api/chat/stream`, `rag_chat.chat_stream()` |
-| Profil systemu | Działa | `scripts/collect_system_profile.py`, `POST /api/system-profile/refresh` |
-| Zasady hosta w RAG | Działa | `backend/app/host_rules.py`, chunki `source_type=rules` |
-| Streaming Ollama (kod) | **Już jest, nieużywany w czacie** | `OllamaClient.stream_generate()` w `llm_client.py` |
-| Whisper STT | **Poza repo-story**, osobne venv | `/mnt/ollama/ai-envs/audio-core/.venv` |
-| Frontend czat | Tekst, POST, bez streamu | `frontend/public/js/app.js`, zakładka `#tab-chat` |
+| Przewodniki edukacyjne | Działa | `education_generator.py`, `education_pack.py` |
+| Polski (PL-gate) | Działa | `polish_validator.py` |
+| Eksport HTML | Działa | `html_exporter.py`, `GET /api/reports/{id}/export.html` |
+| SQLite RAG | Działa | `knowledge_store.py`, `data/knowledge.db` |
+| Czat sync (fallback) | Działa | `POST /api/chat` |
+| Czat streaming SSE | Działa | `POST /api/chat/stream`, `sse.py`, `rag_chat.chat_stream()` |
+| Multi-turn + voice_mode | Działa | `CHAT_HISTORY_LIMIT`, `conversation_config.py` |
+| STT mikrofon | Działa | `POST /api/stt/transcribe`, `stt_service.py`, `stt_quality.py` |
+| TTS Piper | Działa | `POST /api/tts/speak`, `tts_service.py` |
+| Profil systemu + rules | Działa | `system_profile.py`, `host_rules.py` |
+| Dyktowanie systemowe | Działa | `scripts/system-dictation.sh` |
+| Testy jednostkowe | Działa | `tests/test_*` (13 testów przy ostatnim push) |
+| Frontend czat | Działa | `index.html`, `app.js`, `styles.css` — toggle 🎤, TTS bar |
 
-### 0.3 Czego NIE ma (to budujesz)
+### 0.3 Czego NIE ma (Fazy A i B — następna sesja)
 
-- ~~Endpoint streamingu odpowiedzi (SSE)~~ — **zrobione (Faza 1)**.
-- ~~UI pokazujące tokeny na żywo~~ — **zrobione (Faza 1)**.
-- ~~Endpoint STT (nagranie → tekst) i przycisk mikrofonu~~ — **zrobione (Faza 2)**.
-- TTS i pełna pętla głosowa (Faza 3).
+Fazy 1–3 są **zamknięte**. Kolejna praca: **[`AGENT_IMPLEMENTATION_PHASE_AB.md`](./AGENT_IMPLEMENTATION_PHASE_AB.md)**.
+
+Skrót planu A+B (zatwierdzony przez użytkownika):
+
+| Faza | Moduły |
+|------|--------|
+| **A** | Supertonic TTS, notatnik użytkownika w RAG, UI sesji, alerty pustej bazy |
+| **B** | Wykonaj krok (whitelist), katalog projektów, checklisty, cron profilu |
+
+### 0.6 Kronika sesji wdrożeniowej (2026-05-18) — co zrobiono
+
+| Etap | Opis |
+|------|------|
+| Kontekst | Rozwinięcie `repo-analyzer` → `repo-story` (edukacja + RAG v4.0) |
+| Faza 1 | `chat_stream()`, SSE, parser w `app.js`, testy `test_rag_chat_stream.py` |
+| Faza 2 | `transcribe_file.py`, `stt_service.py`, ffmpeg, mikrofon MediaRecorder |
+| Faza 3 | `tts_service.py` (Piper), checkbox głosu, `playTtsForText` |
+| UX iteracje | Toggle mikrofonu (nie hold); filtr halucynacji STT (Amara.org); pasek 🗣️ Stop/Ponów; auto-TTS po 🎤; odblokowanie audio w przeglądarce |
+| System | `system-dictation.sh` — STT + wklejenie tekstu (skrót klawiszowy) |
+| GitHub | `687c8f6` + tag `v4.3.0-voice-assistant` |
+| Decyzja użytkownika | Priorytet następny: **Poziom A + B** (dokument PHASE_AB) |
+
+**Problemy napotkane i rozwiązania:**
+
+| Problem | Rozwiązanie |
+|---------|-------------|
+| CUDA `libcublas` w subprocess STT | Fallback CPU w `transcribe_file.py` |
+| Halucynacja Whisper na ciszy | `stt_quality.py` + VAD w Whisper |
+| Brak TTS przy wyłączonym checkbox | Auto-TTS po mikrofonie; checkbox domyślnie ON |
+| Autoplay blocked w przeglądarce | `unlockAudioPlayback()` + komunikat „kliknij 🔊 Odtwórz” |
+| `python-multipart` | Dodane do `requirements.txt` |
 
 ### 0.4 Zasady hosta (OBOWIĄZKOWE przy implementacji)
 
@@ -279,11 +315,11 @@ Events:
 
 ---
 
-## 3. Faza 2 — Mikrofon (push-to-talk) + STT
+## 3. Faza 2 — Mikrofon (toggle) + STT — **WDROŻONE**
 
 ### 3.1 Cel produktowy
 
-Przycisk **🎤 Nagraj** → użytkownik mówi → po puszczeniu tekst trafia do czatu (najlepiej od razu ze streamingiem z Fazy 1).
+Przycisk **🎤** — **klik start / klik stop** → transkrypcja → automatycznie `POST /api/chat/stream` (z TTS jeśli włączone).
 
 ### 3.2 Dlaczego NIE wbudowywać faster-whisper w `.venv` repo-story (domyślnie)
 
@@ -424,11 +460,11 @@ Wywołanie z `stt_service.py` przed transcribe.
 
 ---
 
-## 4. Faza 3 — TTS (odpowiedź głosowa) — specyfikacja na później
+## 4. Faza 3 — TTS (odpowiedź głosowa) — **WDROŻONE**
 
 ### 4.1 Cel
 
-Po zakończeniu streamu tekstu (lub zamiast czytania) użytkownik **słyszy** odpowiedź po polsku.
+Po zakończeniu streamu użytkownik **słyszy** odpowiedź (Piper); może **zatrzymać** lub **ponowić**.
 
 ### 4.2 Opcje TTS (analiza pod Linux + regulamin)
 
@@ -439,80 +475,79 @@ Po zakończeniu streamu tekstu (lub zamiast czytania) użytkownik **słyszy** od
 | **Coqui TTS** | Dobra | Tak | ciężkie | Raczej osobne venv |
 | **Ollama bez TTS** | — | — | — | Bielik nie generuje audio |
 
-**Rekomendacja:** Piper offline w `/mnt/ollama/ai-envs/tts` + głos polski (np. `pl_PL-*` z repozytoriów Piper).
+**Wdrożenie:** Piper przez subprocess (`PIPER_BIN`, model `pl_PL-gosia-medium.onnx` w `/mnt/ollama/modele/piper/`). Supertonic — plan w Fazie **A1** (PHASE_AB).
 
-### 4.3 Projekt API (szkic)
+### 4.3 API (zaimplementowane)
 
 ```
 POST /api/tts/speak
 Body: { "text": "...", "voice": "pl" }
-Response: audio/wav lub audio/ogg stream
+Response: audio/wav (plik tymczasowy, usuwany po wysłaniu)
 ```
 
-Frontend: po `event: done` w czacie opcjonalnie `fetch('/api/tts/speak')` + `Audio` element.
+Body czatu/stream: `{ "message", "session_id?", "voice_mode": true }` — krótsze odpowiedzi (`conversation_config.py`).
 
-**Kolejność GPU:** TTS (CPU/GPU zależnie od backendu) **po** zakończeniu Ollama LLM.
+### 4.4 Weryfikacja Fazy 3
 
-### 4.4 Weryfikacja Fazy 3 (checklist na przyszłość)
-
-- [ ] Piper generuje plik WAV z polskiego zdania
-- [ ] Endpoint zwraca audio < 5 s dla 2 zdań
-- [ ] UI przycisk „Odtwórz odpowiedź”
-- [ ] Brak feedback loop (mikrofon nie nagrywa głośnika — opcjonalnie push-to-talk tylko)
+- [x] Piper generuje WAV (`curl` → `/tmp/tts.wav`)
+- [x] Endpoint HTTP 200
+- [x] UI: checkbox, pasek 🗣️, 🔊 Odtwórz / ⏹ przy wiadomości
+- [x] Auto-TTS po mikrofonie; komunikat przy blokadzie autoplay
 
 ---
 
-## 5. Konfiguracja — nowe zmienne (`config.py`)
-
-Dodać (z sensownymi domyślnymi):
+## 5. Konfiguracja — zmienne w `config.py` (stan v4.3)
 
 ```python
-# STT (Faza 2)
-AUDIO_CORE_PYTHON: Path = Path("/mnt/ollama/ai-envs/audio-core/.venv/bin/python")
-TRANSCRIBE_SCRIPT: Path = PROJECT_ROOT / "scripts" / "transcribe_file.py"
-WHISPER_MODELS_DIR: Path = Path("/mnt/ollama/whisper_models")
-STT_MODEL: str = os.getenv("STT_MODEL", "medium")
-STT_MAX_AUDIO_MB: int = int(os.getenv("STT_MAX_AUDIO_MB", "25"))
-STT_TIMEOUT_S: int = int(os.getenv("STT_TIMEOUT_S", "120"))
+# STT
+AUDIO_CORE_PYTHON, TRANSCRIBE_SCRIPT, WHISPER_MODELS_DIR
+STT_MODEL, STT_FALLBACK_MODEL, STT_MAX_AUDIO_MB, STT_TIMEOUT_S
+STT_MIN_DURATION_S, STT_MIN_RMS
 
-# TTS (Faza 3)
-TTS_VENV_PYTHON: Path = Path("/mnt/ollama/ai-envs/tts/.venv/bin/python")  # po utworzeniu
+# TTS (Piper)
+PIPER_BIN, PIPER_MODEL, TTS_MAX_CHARS, TTS_TIMEOUT_S
+
+# Rozmowa
+CHAT_HISTORY_LIMIT, CHAT_CONVERSATION_MODE  # balanced | voice | detailed
 ```
 
 ---
 
-## 6. Mapa plików repozytorium (stan v4.0)
+## 6. Mapa plików repozytorium (stan v4.3)
 
 ```text
 /mnt/ollama/projekty/repo-story/
 ├── backend/app/
-│   ├── main.py              # FastAPI 4.0, wszystkie endpointy
-│   ├── rag_chat.py          # RAG sync — rozszerzyć o stream
-│   ├── llm_client.py        # stream_generate GOTOWE
-│   ├── knowledge_store.py   # SQLite RAG
-│   ├── guide_indexer.py
-│   ├── system_profile.py
+│   ├── main.py
+│   ├── rag_chat.py
+│   ├── sse.py
+│   ├── stt_service.py
+│   ├── stt_quality.py
+│   ├── tts_service.py
+│   ├── conversation_config.py
+│   ├── knowledge_store.py
 │   ├── host_rules.py
-│   ├── polish_validator.py
-│   ├── education_generator.py
 │   └── ...
-├── backend/templates/guide_export.html
+├── scripts/
+│   ├── transcribe_file.py
+│   ├── system-dictation.sh
+│   ├── collect_system_profile.py
+│   └── collect-system-profile.sh
+├── tests/
+│   ├── test_rag_chat_stream.py
+│   ├── test_stt_service.py
+│   ├── test_stt_quality.py
+│   └── test_tts_service.py
 ├── frontend/public/
-│   ├── index.html           # zakładki + chat
+│   ├── index.html
 │   ├── js/app.js
 │   └── css/styles.css
-├── scripts/
-│   ├── collect_system_profile.py
-│   ├── collect-system-profile.sh
-│   └── transcribe_file.py   # DO UTWORZENIA (Faza 2)
-├── data/
-│   ├── knowledge.db
-│   └── system-profile.json
 ├── docs/
-│   ├── system-profile-cron.md
-│   └── AGENT_IMPLEMENTATION_LIVE_ASSISTANT.md  # ten plik
-├── reports/                 # JSON przewodników
-└── run.sh                   # port 9743
+│   ├── AGENT_IMPLEMENTATION_LIVE_ASSISTANT.md   # ten plik
+│   ├── AGENT_IMPLEMENTATION_PHASE_AB.md         # Fazy A i B
+│   └── system-profile-cron.md
+├── data/knowledge.db          # runtime — nie w git
+└── run.sh
 ```
 
 ---
@@ -526,7 +561,8 @@ TTS_VENV_PYTHON: Path = Path("/mnt/ollama/ai-envs/tts/.venv/bin/python")  # po u
 | POST | `/api/chat` | Czat sync (zostaw dla kompatybilności) |
 | **POST** | **`/api/chat/stream`** | **Faza 1 — SSE streaming** |
 | **POST** | **`/api/stt/transcribe`** | **Faza 2 — mikrofon STT** |
-| **POST** | **`/api/tts/speak`** | **DO DODANIA Faza 3** |
+| **POST** | **`/api/tts/speak`** | **TTS Piper (WAV)** |
+| — | `voice_mode` w body `/api/chat` i `/api/chat/stream` | Krótsze odpowiedzi pod głos |
 | POST | `/api/system-profile/refresh` | Profil + rules index |
 | GET | `/api/knowledge/stats` | Statystyki chunków |
 | POST | `/api/knowledge/migrate` | Indeksuj reports/*.json |
@@ -549,16 +585,20 @@ TTS_VENV_PYTHON: Path = Path("/mnt/ollama/ai-envs/tts/.venv/bin/python")  # po u
 1. [x] `scripts/transcribe_file.py` + test ręczny WAV
 2. [x] `stt_service.py` + ffmpeg convert
 3. [x] `main.py` endpoint multipart (`python-multipart` w requirements)
-4. [x] UI mikrofon (push-to-talk) + integracja ze stream czatem
+4. [x] UI mikrofon (toggle klik) + integracja ze stream czatem + `stt_quality.py`
 5. [x] Weryfikacja 2.2 (curl); 2.3–2.5 — sprawdź mikrofon w przeglądarce
 6. [x] Profil whisper — już w `collect_system_profile.py`
 
-### Sprint C — Faza 3 (osobna sesja, po akceptacji użytkownika)
+### Sprint C — Faza 3 — **UKOŃCZONE**
 
-1. [ ] Utwórz `/mnt/ollama/ai-envs/tts` według standard_projektu
-2. [ ] Piper + polski głos
-3. [ ] Endpoint TTS + UI
-4. [ ] Weryfikacja 4.4
+1. [x] Piper (`~/.local/bin/piper` + modele w `/mnt/ollama/modele/piper/`)
+2. [x] `tts_service.py` + `POST /api/tts/speak`
+3. [x] UI: checkbox, pasek TTS, 🔊/⏹ przy odpowiedziach
+4. [x] Weryfikacja 4.4 + UX po feedbacku użytkownika
+
+### Sprint D — Fazy A i B (następna sesja)
+
+Patrz **[`AGENT_IMPLEMENTATION_PHASE_AB.md`](./AGENT_IMPLEMENTATION_PHASE_AB.md)**.
 
 ---
 
@@ -567,7 +607,8 @@ TTS_VENV_PYTHON: Path = Path("/mnt/ollama/ai-envs/tts/.venv/bin/python")  # po u
 ```bash
 cd /mnt/ollama/projekty/repo-story
 source .venv/bin/activate
-pip install -r requirements.txt   # tylko jeśli nowe zależności (Faza 1: brak; Faza 2: brak jeśli subprocess)
+pip install -r requirements.txt   # python-multipart wymagane dla STT upload
+python -m unittest discover -s tests -p 'test_*.py' -v
 ./run.sh
 
 # Terminal 2
@@ -598,34 +639,60 @@ Otwórz: `http://127.0.0.1:9743/` → zakładka **Rozmowa**.
 - [ ] `pip install torch` w `repo-story/.venv` bez uzasadnienia.
 - [ ] Usuwać istniejące endpointy v4.0.
 - [ ] Commitować `data/knowledge.db` lub `reports/*.json` (dane lokalne).
-- [ ] Wdrażać Fazę 3 przed stabilną Fazą 1+2.
+- [ ] Wdrażać Fazę B1 (shell) bez whitelisty i bez potwierdzenia UI.
+- [ ] Duplikować torch/faster-whisper w `repo-story/.venv`.
 
 ---
 
-## 12. Prompt startowy dla nowej sesji (skopiuj użytkownikowi)
+## 12. Prompty startowe dla nowej sesji
+
+### 12.1 Utrzymanie / bugfix (Fazy 1–3 już są)
 
 ```text
-Wdrażasz Repo Opowieść — asystent na żywo. Przeczytaj OBOWIĄZKOWO:
-/mnt/ollama/projekty/repo-story/docs/AGENT_IMPLEMENTATION_LIVE_ASSISTANT.md
-oraz regulamin: /mnt/ollama/system-control/info wazne/regulamin_linux_ai.md
+Repo Opowieść v4.3 — naprawa/utrzymanie asystenta głosowego.
+Przeczytaj: docs/AGENT_IMPLEMENTATION_LIVE_ASSISTANT.md (sekcje 0.2, 0.6, 2–4).
+Git: git fetch && git status -sb. Tag: v4.3.0-voice-assistant.
+Port 9743. Nie ruszaj repo-analyzer (9742).
+```
 
-Na start: git fetch && git status && porównaj z origin/main (sekcja 0.0.1 dokumentu).
-GitHub: https://github.com/Noacodenoobe/repo-story (osobno od repo-analyzer).
-Kolejność: Faza 1 (SSE streaming czat) → Faza 2 (STT mikrofon via audio-core venv) → Faza 3 dopiero po akceptacji.
-Projekt: /mnt/ollama/projekty/repo-story, port 9743.
-Po każdej fazie: checklista weryfikacji + commit + push na GitHub (sekcja 0.0.2).
-Nie ruszaj repo-analyzer (9742) bez wyraźnego polecenia.
+### 12.2 Nowe funkcje — Fazy A i B (DOMYŚLNY dla kolejnej sesji)
+
+```text
+Wdrażasz Repo Opowieść — Fazy A i B.
+
+Przeczytaj OBOWIĄZKOWO (kolejność):
+1. /mnt/ollama/projekty/repo-story/docs/AGENT_IMPLEMENTATION_LIVE_ASSISTANT.md
+2. /mnt/ollama/projekty/repo-story/docs/AGENT_IMPLEMENTATION_PHASE_AB.md
+3. /mnt/ollama/system-control/info wazne/regulamin_linux_ai.md
+
+git fetch origin && git status -sb && git log origin/main -3 --oneline
+GitHub: https://github.com/Noacodenoobe/repo-story
+Sprint A: A2 notatnik → A4 alerty → A3 sesja → A1 Supertonic
+Sprint B: B1 wykonaj krok → B2 projekty → B3 checklisty → B4 cron
+Po sprincie: testy + commit + push (sekcja 0.0.2).
 ```
 
 ---
 
-## 13. Historia decyzji projektowych (kontekst dla użytkownika)
+## 13. Historia decyzji projektowych
 
-- **Czat tekstowy RAG** wdrożony w v4.0 — globalna baza przewodników + profil + regulamin.
-- **Streaming** odłożony świadomie — kod `stream_generate` był gotowy, brakło endpointu i UI.
-- **Whisper** — użytkownik ma działające `faster-whisper` w `audio-core`; nie duplikować w repo-story.
-- **Docelowo Faza 3** — użytkownik chce słyszeć odpowiedzi; wymaga osobnej sesji i env TTS.
+- **v4.0** — RAG globalny, przewodniki, profil, regulamin w KB.
+- **v4.3** — streaming + STT + TTS + UX głosu; asystent **doradza**, nie wykonuje poleceń.
+- **Whisper** — subprocess `audio-core`, nie pip w repo-story.
+- **TTS** — Piper lokalny; Supertonic zaplanowany w A1.
+- **Mikrofon** — toggle (nie hold); auto-TTS po 🎤.
+- **Następny krok** — Fazy A+B: lepszy głos, notatnik, bezpieczne „Wykonaj krok”.
 
 ---
 
-*Koniec dokumentu agenta.*
+## 14. Dokumentacja powiązana
+
+| Plik | Zawartość |
+|------|-----------|
+| [`AGENT_IMPLEMENTATION_PHASE_AB.md`](./AGENT_IMPLEMENTATION_PHASE_AB.md) | Szczegółowa specyfikacja i checklisty Faz A i B |
+| [`system-profile-cron.md`](./system-profile-cron.md) | Cron odświeżania profilu (B4) |
+| [`README.md`](../README.md) | Krótki opis użytkownika + link do GitHub |
+
+---
+
+*Koniec dokumentu Faz 1–3. Kontynuacja: `AGENT_IMPLEMENTATION_PHASE_AB.md`.*
