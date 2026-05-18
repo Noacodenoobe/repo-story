@@ -1,0 +1,18 @@
+# Repo Analyzer — zależności Python.
+# Trzymamy listę minimalną - zgodnie z regulaminem: nie dublujemy zależności AI.
+
+# Serwer HTTP
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+
+# Walidacja danych i typy
+pydantic==2.9.2
+
+# HTTP klient do Ollamy
+requests==2.32.3
+
+# Embeddingi - prosta matma wektorowa
+numpy==1.26.4
+
+# (opcjonalne) ładniejsze logi i parsowanie - nie wymagane do działania
+# rich==13.7.1

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Repo Opowieść — GitHub po ludzku</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📖%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-logo">📖</span>
+      <div class="brand-text">
+        <h1>Repo Opowieść</h1>
+        <p>Wklej link — dostaniesz prezentację, nie raport inżynierski</p>
+      </div>
+    </div>
+    <div class="health-pill" id="health-pill" title="Status połączenia z Ollamą">
+      <span class="dot dot-unknown"></span>
+      <span class="label">Sprawdzam Ollamę…</span>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab tab-active" data-tab="analyze" role="tab">🔍 Nowa opowieść</button>
+    <button class="tab" data-tab="history" role="tab">📚 Historia</button>
+    <button class="tab" data-tab="diag" role="tab">⚙️ Diagnostyka</button>
+    <button class="tab" data-tab="help" role="tab">❓ Pomoc</button>
+  </nav>
+
+  <main>
+    <section class="panel panel-active" id="tab-analyze">
+      <div class="card">
+        <h2>Opowiedz mi o projekcie</h2>
+        <p class="muted">Wklej adres publicznego projektu z GitHub. Otrzymasz krótką, interaktywną prezentację po polsku — bez żargonu.</p>
+        <form id="analyze-form">
+          <label for="repo-url">Adres projektu</label>
+          <input type="url" id="repo-url" placeholder="https://github.com/uzytkownik/projekt" required autocomplete="off" />
+          <div class="checkboxes">
+            <label><input type="checkbox" id="force-reclone" /> Pobierz projekt od nowa</label>
+            <label><input type="checkbox" id="include-technical" /> Dołącz szczegóły techniczne (wolniejsze)</label>
+          </div>
+          <button type="submit" class="btn-primary" id="analyze-btn">✨ Stwórz prezentację</button>
+        </form>
+        <div class="progress" id="progress" hidden>
+          <div class="spinner"></div>
+          <div class="progress-text" id="progress-text">Przygotowuję opowieść…</div>
+        </div>
+        <div class="alert" id="alert" hidden></div>
+      </div>
+
+      <div id="results" hidden>
+        <div class="card deck-intro" id="deck-intro"></div>
+
+        <div class="card presentation-card" id="presentation-card">
+          <div class="presentation-toolbar">
+            <span class="slide-counter" id="slide-counter">1 / 1</span>
+            <button type="button" class="btn-secondary btn-sm" id="btn-fullscreen" title="Pełny ekran">⛶</button>
+          </div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill" id="progress-bar-fill"></div>
+          </div>
+          <div class="slide-stage" id="slide-stage"></div>
+          <div class="slide-nav">
+            <button type="button" class="btn-secondary" id="btn-prev" disabled>← Wstecz</button>
+            <button type="button" class="btn-primary" id="btn-next">Dalej →</button>
+          </div>
+        </div>
+
+        <div class="card" id="quiz-card" hidden>
+          <h3>📝 Sprawdź, czy to zrozumiałeś</h3>
+          <div id="quiz-block"></div>
+        </div>
+
+        <details class="card technical-details" id="technical-details">
+          <summary>🔧 Szczegóły techniczne (opcjonalnie)</summary>
+          <div id="technical-content">
+            <h4>📊 Statystyki</h4>
+            <div id="static-block"></div>
+            <h4>📐 Diagramy</h4>
+            <div class="mermaid" id="diagram-overview"></div>
+            <div class="mermaid" id="diagram-tree"></div>
+            <div id="card-llm" hidden>
+              <h4>🧠 Analiza techniczna</h4>
+              <div id="llm-block"></div>
+            </div>
+            <div id="card-polish" hidden>
+              <h4>🇵🇱 Raport techniczny</h4>
+              <div id="polish-block" class="markdown-body"></div>
+            </div>
+          </div>
+        </details>
+
+        <div class="card">
+          <div class="actions">
+            <button type="button" class="btn-secondary" id="btn-download-md">⬇️ Pobierz tekst</button>
+          </div>
+          <div class="meta" id="result-meta"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="tab-history">
+      <div class="card">
+        <h2>Zapisane opowieści</h2>
+        <div class="row">
+          <input type="text" id="history-search" placeholder="Szukaj po adresie…" />
+          <button type="button" class="btn-secondary" id="history-refresh">🔄 Odśwież</button>
+        </div>
+        <div id="history-list" class="history-list"></div>
+      </div>
+    </section>
+
+    <section class="panel" id="tab-diag">
+      <div class="card">
+        <h2>Diagnostyka</h2>
+        <button type="button" class="btn-secondary" id="diag-refresh">🔄 Sprawdź ponownie</button>
+        <pre id="diag-output" class="code-block">…</pre>
+      </div>
+      <div class="card">
+        <h3>Konfiguracja</h3>
+        <pre id="diag-config" class="code-block">…</pre>
+      </div>
+    </section>
+
+    <section class="panel" id="tab-help">
+      <div class="card">
+        <h2>Jak to działa?</h2>
+        <ol>
+          <li>Uruchom Ollamę: <code>ollama serve</code></li>
+          <li>Pobierz model: <code>ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q4_K_M</code></li>
+          <li>Wklej link i kliknij <strong>Stwórz prezentację</strong>.</li>
+        </ol>
+      </div>
+    </section>
+  </main>
+
+  <footer>Repo Opowieść · lokalnie · MIT</footer>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+Na podstawie faktów o projekcie stwórz interaktywną prezentację edukacyjną w JSON.
+
+Wymagana struktura:
+{{
+  "title": "tytuł prezentacji",
+  "essence": "jedno zdanie esencji projektu",
+  "summary_3": ["zdanie 1", "zdanie 2", "zdanie 3"],
+  "slides": [
+    {{
+      "id": "what|why|how|who|inside|worth",
+      "emoji": "jeden emoji",
+      "title": "krótki tytuł sceny",
+      "body": "główny tekst — MAX 55 słów, zero żargonu",
+      "analogy": "jedna analogia z życia codziennego",
+      "for_you": "jedno zdanie: co to znaczy dla zwykłego użytkownika",
+      "more_detail": "dłuższe wyjaśnienie (opcjonalnie, też prosto)",
+      "glossary": [{{"term": "słowo", "definition": "krótkie wyjaśnienie"}}]
+    }}
+  ],
+  "quiz": [
+    {{
+      "question": "proste pytanie sprawdzające zrozumienie",
+      "options": ["odpowiedź A", "odpowiedź B", "odpowiedź C"],
+      "correct_index": 0
+    }}
+  ]
+}}
+
+Wymagane dokładnie 6 slajdów w kolejności:
+1. what — Co to jest?
+2. why — Po co to powstało?
+3. how — Jak to działa w praktyce?
+4. who — Dla kogo?
+5. inside — Co jest w środku (bez nazw plików)?
+6. worth — Czy warto się tym zainteresować?
+
+Dodaj 2–3 pytania quizowe. Każde body max 55 słów.
+
+FAKTY:
+{facts_json}

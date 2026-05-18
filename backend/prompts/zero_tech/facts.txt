@@ -1,0 +1,13 @@
+Na podstawie danych o projekcie wypisz fakty w JSON.
+Pola wymagane:
+- project_name (krótka nazwa po polsku)
+- one_line (jedno zdanie — o co chodzi)
+- problem_solved (jaki problem rozwiązuje, językiem laika)
+- who_is_it_for (dla kogo)
+- how_it_works_simple (3–5 zdań bez żargonu)
+- main_parts (lista 3–6 części opisanych rolami, BEZ nazw plików)
+- interesting_fact (jedna ciekawostka)
+- caution (jedna rzecz, na którą warto uważać — prosto)
+
+DANE PROJEKTU:
+{context}

@@ -1,0 +1,32 @@
+# Środowisko Python
+.venv/
+venv/
+env/
+*.pyc
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Katalogi runtime (tworzone przez setup.sh)
+data/repos/
+indexes/*.pkl
+reports/*.json
+reports/*.md
+logs/
+
+# IDE / edytory
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# System
+.DS_Store
+Thumbs.db
+*~
+
+# Lokalne nadpisania konfiguracji
+.env
+.env.local
