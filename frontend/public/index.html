@@ -27,6 +27,7 @@
     <button class="tab" data-tab="history">📚 Historia</button>
     <button class="tab" data-tab="projects">📁 Moje projekty</button>
     <button class="tab" data-tab="chat">💬 Rozmowa</button>
+    <button class="tab" data-tab="bpmn-design">📐 Projektuj BPMN</button>
     <button class="tab" data-tab="diag">⚙️ Diagnostyka</button>
     <button class="tab" data-tab="help">❓ Pomoc</button>
   </nav>
@@ -114,6 +115,8 @@
         <h2>Rozmowa z bazą wiedzy</h2>
         <p class="muted">Pytaj o instalację i konfigurację — odpowiedzi z przewodników, notatek i profilu systemu. Mikrofon: kliknij 🎤 aby włączyć/wyłączyć nagrywanie.</p>
         <div id="kb-empty-banner" class="kb-banner hidden" role="status"></div>
+        <div id="chat-mode-banner" class="chat-mode-banner hidden" role="status"></div>
+        <div id="chat-deployment-panel" class="deployment-panel hidden"></div>
         <div class="chat-session-bar row">
           <span id="chat-session-label" class="muted">Sesja: nowa</span>
           <button type="button" class="btn-secondary" id="chat-new-session">🆕 Nowa rozmowa</button>
@@ -143,6 +146,32 @@
           <button type="button" class="btn-secondary" id="chat-tts-replay" title="Odtwórz ostatnią odpowiedź">🔊 Ponów</button>
         </div>
         <div id="chat-citations" class="chat-citations muted"></div>
+      </div>
+    </section>
+
+    <section class="panel" id="tab-bpmn-design">
+      <div class="card bpmn-design-layout">
+        <div class="bpmn-design-header row">
+          <h2>Projektuj BPMN</h2>
+          <span id="bpmn-sidecar-status" class="bpmn-status muted">Sprawdzam sidecar…</span>
+        </div>
+        <p class="muted">Opisz proces po polsku — diagram BPMN 2.0 generuje sidecar bpmn-assistant (Docker :8000).</p>
+        <div class="bpmn-design-grid">
+          <div class="bpmn-design-chat">
+            <textarea id="bpmn-prompt" rows="5" placeholder="Np. Proces zamówienia pizzy: klient składa zamówienie, kuchnia przygotowuje, kurier dostarcza."></textarea>
+            <div class="row">
+              <button type="button" class="btn-primary" id="bpmn-generate">Generuj diagram</button>
+              <button type="button" class="btn-secondary" id="bpmn-revise" disabled>Popraw</button>
+              <button type="button" class="btn-secondary" id="bpmn-export" disabled>Eksportuj .bpmn</button>
+              <a class="btn-secondary" id="bpmn-open-editor" href="http://127.0.0.1:8080" target="_blank" rel="noopener">Otwórz pełny edytor</a>
+            </div>
+            <div id="bpmn-narrative" class="bpmn-narrative muted"></div>
+          </div>
+          <div class="bpmn-design-viewer-wrap">
+            <div id="bpmn-canvas" class="bpmn-canvas"></div>
+            <iframe id="bpmn-fallback-iframe" class="bpmn-fallback hidden" title="BPMN Assistant UI" src="about:blank"></iframe>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -195,10 +224,13 @@
 
   <footer>Repo Opowieść · lokalnie · MIT</footer>
 
+  <link rel="stylesheet" href="https://unpkg.com/bpmn-js@17.11.1/dist/assets/diagram-js.css" />
+  <link rel="stylesheet" href="https://unpkg.com/bpmn-js@17.11.1/dist/assets/bpmn-js.css" />
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+  <script src="https://unpkg.com/bpmn-js@17.11.1/dist/bpmn-navigated-viewer.production.min.js"></script>
   <script src="/js/app.js"></script>
 </body>
 </html>

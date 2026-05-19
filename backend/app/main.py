@@ -39,6 +39,8 @@ from .tts_service import TtsError, TtsService
 from .user_notes_service import UserNotesService
 from .action_runner import assess_risk, run_command, validate_command
 from .projects_service import ProjectsService
+from .bpmn_assistant_client import BpmnAssistantClient
+from .process_design import ProcessDesignService
 
 
 config.LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -106,6 +108,8 @@ system_profile_svc = SystemProfileService()
 knowledge_store = KnowledgeStore()
 user_notes_svc = UserNotesService(store=knowledge_store, indexer=guide_indexer)
 projects_svc = ProjectsService(kb=kb, store=knowledge_store)
+bpmn_client = BpmnAssistantClient()
+process_design_svc = ProcessDesignService(store=knowledge_store, client=bpmn_client)
 
 
 class ChatRequest(BaseModel):
@@ -114,6 +118,10 @@ class ChatRequest(BaseModel):
     voice_mode: bool = Field(
         False,
         description="Shorter, speech-friendly answers; use with TTS playback",
+    )
+    response_mode: Optional[str] = Field(
+        None,
+        description="Force response mode: default | deployment | process_design",
     )
 
 
@@ -145,6 +153,18 @@ class ActionRunRequest(BaseModel):
 
 class ProfileUploadRequest(BaseModel):
     profile: Dict[str, Any] = Field(..., description="System profile JSON object")
+
+
+class ProcessDesignRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000)
+    session_id: Optional[str] = Field(None, description="Chat session link")
+    design_id: Optional[str] = Field(None, description="Existing design session id")
+    model: Optional[str] = Field(None, description="Sidecar LLM model override")
+
+
+class ProcessDesignReviseRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000)
+    model: Optional[str] = Field(None, description="Sidecar LLM model override")
 
 
 @app.get("/api/health", response_model=HealthResponse)
@@ -407,6 +427,7 @@ def chat(req: ChatRequest) -> Dict[str, Any]:
         req.message,
         session_id=req.session_id,
         voice_mode=req.voice_mode,
+        response_mode_override=req.response_mode,
     )
 
 
@@ -462,6 +483,7 @@ def chat_stream(req: ChatRequest) -> StreamingResponse:
                 req.message,
                 session_id=req.session_id,
                 voice_mode=req.voice_mode,
+                response_mode_override=req.response_mode,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("chat/stream failed")
@@ -595,6 +617,53 @@ def list_projects() -> Dict[str, Any]:
     """List analyzed repositories with KB indexing status."""
     items = projects_svc.list_projects()
     return {"count": len(items), "items": items}
+
+
+# --- Phase C: BPMN sidecar and process design ---
+
+
+@app.get("/api/bpmn-assistant/health")
+def bpmn_assistant_health() -> Dict[str, Any]:
+    """Check bpmn-assistant Docker sidecar availability."""
+    return bpmn_client.health_detail()
+
+
+@app.get("/api/process-design/sessions")
+def list_process_design_sessions() -> Dict[str, Any]:
+    """List saved BPMN design sessions."""
+    items = process_design_svc.list_sessions()
+    return {"count": len(items), "items": items}
+
+
+@app.get("/api/process-design/sessions/{design_id}")
+def get_process_design_session(design_id: str) -> Dict[str, Any]:
+    """Return one BPMN design session with XML."""
+    session = process_design_svc.get_session(design_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Brak sesji: {design_id}")
+    return session
+
+
+@app.post("/api/process-design/generate")
+def process_design_generate(req: ProcessDesignRequest) -> Dict[str, Any]:
+    """Generate or continue a BPMN diagram via sidecar."""
+    artifact = process_design_svc.generate(
+        req.message,
+        session_id=req.session_id,
+        design_id=req.design_id,
+        model=req.model,
+    )
+    return artifact.model_dump()
+
+
+@app.post("/api/process-design/sessions/{design_id}/revise")
+def process_design_revise(design_id: str, req: ProcessDesignReviseRequest) -> Dict[str, Any]:
+    """Revise an existing BPMN design session."""
+    try:
+        artifact = process_design_svc.revise(design_id, req.message, model=req.model)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return artifact.model_dump()
 
 
 if config.FRONTEND_DIR.exists():

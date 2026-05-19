@@ -36,19 +36,32 @@ _DETAILED = (
     "ale każdy krok musi wynikać z kontekstu."
 )
 
+_DEPLOYMENT = (
+    "Tryb planu wdrożenia: odpowiedź ma zawierać krótkie podsumowanie po polsku "
+    "oraz odwołanie do strukturalnego planu (kroki, ścieżki /mnt/ollama). "
+    "Nigdy nie podawaj pip install dla projektów instalowanych przez git clone + docker. "
+    "Jeśli brak howto w kontekście — wskaż lukę w planie, nie wymyślaj komend."
+)
 
-def build_system_prompt(voice_mode: bool = False) -> str:
+
+def build_system_prompt(
+    voice_mode: bool = False,
+    response_mode: str = "default",
+) -> str:
     """
     Build LLM system prompt for the active conversation mode.
 
     Args:
         voice_mode: Shorter, speech-friendly answers (Phase 3).
+        response_mode: default | deployment | process_design.
 
     Returns:
         Full system string for Ollama.
     """
     mode = (config.CHAT_CONVERSATION_MODE or "balanced").lower()
     parts = [_BASE]
+    if response_mode == "deployment":
+        parts.append(_DEPLOYMENT)
     if voice_mode or mode == "voice":
         parts.append(_VOICE)
     elif mode == "detailed":

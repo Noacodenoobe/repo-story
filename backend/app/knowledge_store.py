@@ -88,8 +88,19 @@ class KnowledgeStore:
                     created_at REAL,
                     updated_at REAL
                 );
+                CREATE TABLE IF NOT EXISTS process_design_sessions (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT,
+                    title TEXT,
+                    bpmn_xml TEXT,
+                    bpmn_json TEXT,
+                    history_json TEXT,
+                    revision INTEGER DEFAULT 1,
+                    updated_at REAL
+                );
                 CREATE INDEX IF NOT EXISTS idx_chunks_guide ON chunks(guide_id);
                 CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_messages(session_id);
+                CREATE INDEX IF NOT EXISTS idx_process_design_session ON process_design_sessions(session_id);
             """)
 
     def upsert_guide(
@@ -408,5 +419,75 @@ class KnowledgeStore:
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT id, title, slug, url FROM guides ORDER BY created_at DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # --- Process design sessions (Phase C2) ---
+
+    def upsert_process_design_session(
+        self,
+        *,
+        design_id: Optional[str],
+        chat_session_id: str,
+        title: str,
+        bpmn_xml: str,
+        bpmn_json: List[Any],
+        history_json: List[Dict[str, Any]],
+        revision: int,
+    ) -> str:
+        """Insert or update a BPMN design session. Returns session id."""
+        import uuid as _uuid
+
+        sid = design_id or str(_uuid.uuid4())
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO process_design_sessions
+                    (id, session_id, title, bpmn_xml, bpmn_json, history_json, revision, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    session_id=excluded.session_id,
+                    title=excluded.title,
+                    bpmn_xml=excluded.bpmn_xml,
+                    bpmn_json=excluded.bpmn_json,
+                    history_json=excluded.history_json,
+                    revision=excluded.revision,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    sid,
+                    chat_session_id,
+                    title,
+                    bpmn_xml,
+                    json.dumps(bpmn_json, ensure_ascii=False),
+                    json.dumps(history_json, ensure_ascii=False),
+                    revision,
+                    time.time(),
+                ),
+            )
+        return sid
+
+    def get_process_design_session(self, design_id: str) -> Optional[Dict[str, Any]]:
+        """Return one process design session."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, session_id, title, bpmn_xml, bpmn_json, history_json, revision, updated_at
+                FROM process_design_sessions WHERE id = ?
+                """,
+                (design_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_process_design_sessions(self) -> List[Dict[str, Any]]:
+        """Return all design sessions ordered by updated_at desc."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, session_id, title, revision, updated_at,
+                       length(bpmn_xml) AS xml_len
+                FROM process_design_sessions
+                ORDER BY updated_at DESC
+                """
             ).fetchall()
         return [dict(r) for r in rows]

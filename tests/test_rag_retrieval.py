@@ -19,11 +19,23 @@ class TestRagRetrieval(unittest.TestCase):
         guides = [
             {"id": "1", "title": "Przewodnik: BPMN Asystent", "slug": "github.com_jtlicardo_bpmn-assistant"},
             {"id": "2", "title": "Przewodnik: NoiseTorch", "slug": "noisetorch"},
+            {"id": "3", "title": "Przewodnik: BPMN Process Layout Generator", "slug": "bpmn-layout-generators"},
         ]
         msg = "Czy mogę wykorzystać BPM Assistanta na moim systemie, jakbym musiał go zainstalować?"
         focus = detect_focus_guide(msg, [], guides)
         self.assertIsNotNone(focus)
-        self.assertIn("BPMN", focus["title"])
+        self.assertIn("BPMN Asystent", focus["title"])
+
+    def test_detect_bpmn_assistenta_typo(self) -> None:
+        guides = [
+            {"id": "1", "title": "Przewodnik: BPMN Asystent", "slug": "github.com_jtlicardo_bpmn-assistant"},
+            {"id": "3", "title": "Przewodnik: BPMN Process Layout Generator", "slug": "bpmn-layout-generators"},
+        ]
+        msg = "chciałbym zainstalować bpmn-assistenta"
+        focus = detect_focus_guide(msg, [], guides)
+        self.assertIsNotNone(focus)
+        self.assertIn("Asystent", focus["title"])
+        self.assertNotIn("Layout", focus["title"])
 
     def test_build_query_includes_history(self) -> None:
         guides = [{"id": "1", "title": "Przewodnik: BPMN Asystent", "slug": "bpmn-assistant"}]

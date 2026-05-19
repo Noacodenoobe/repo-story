@@ -164,6 +164,22 @@ KB_EMPTY_CHUNK_THRESHOLD: int = int(os.getenv("KB_EMPTY_CHUNK_THRESHOLD", "5"))
 # Conversation: balanced | voice | detailed
 CHAT_CONVERSATION_MODE: str = os.getenv("CHAT_CONVERSATION_MODE", "balanced")
 
+# BPMN Assistant sidecar (Phase C)
+BPMN_ASSISTANT_ENABLED: bool = os.getenv(
+    "BPMN_ASSISTANT_ENABLED", "true"
+).lower() in ("1", "true", "yes")
+BPMN_ASSISTANT_URL: str = os.getenv("BPMN_ASSISTANT_URL", "http://127.0.0.1:8000")
+BPMN_ASSISTANT_FRONTEND_URL: str = os.getenv(
+    "BPMN_ASSISTANT_FRONTEND_URL", "http://127.0.0.1:8080"
+)
+BPMN_ASSISTANT_MODEL: str = os.getenv("BPMN_ASSISTANT_MODEL", "gpt-4.1")
+BPMN_ASSISTANT_TIMEOUT_S: float = float(os.getenv("BPMN_ASSISTANT_TIMEOUT_S", "120"))
+BPMN_ASSISTANT_ENV_FILE: str = os.getenv(
+    "BPMN_ASSISTANT_ENV_FILE",
+    "/mnt/ollama/projekty/bpmn-assistant/src/bpmn_assistant/.env",
+)
+BPMN_ASSISTANT_API_KEYS_JSON: str = os.getenv("BPMN_ASSISTANT_API_KEYS_JSON", "")
+
 
 def summary() -> dict:
     """Zwraca podsumowanie konfiguracji - przydatne do debug i UI."""
@@ -200,4 +216,9 @@ def summary() -> dict:
             "supertonic_lang": SUPERTONIC_LANG,
         },
         "kb_empty_chunk_threshold": KB_EMPTY_CHUNK_THRESHOLD,
+        "bpmn_assistant": {
+            "enabled": BPMN_ASSISTANT_ENABLED,
+            "url": BPMN_ASSISTANT_URL,
+            "frontend_url": BPMN_ASSISTANT_FRONTEND_URL,
+        },
     }

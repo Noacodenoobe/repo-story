@@ -833,12 +833,84 @@
     if (meta.focus_guide) {
       lines.push(`Temat: ${meta.focus_guide}`);
     }
+    if (meta.response_mode && meta.response_mode !== "default") {
+      lines.push(`Tryb: ${meta.response_mode}`);
+    }
     if (meta.weak_context) {
       lines.push("Uwaga: mało trafnych fragmentów w bazie — odpowiedź może być ogólna.");
+    }
+    if (meta.missing_howto) {
+      lines.push("Uwaga: brak sekcji howto dla wykrytego przewodnika.");
     }
     const cites = formatCitations(citations);
     if (cites) lines.push(`Źródła:\n${cites}`);
     $("#chat-citations").textContent = lines.join("\n") || "";
+  }
+
+  function setChatModeBanner(mode, sidecarOk) {
+    const el = $("#chat-mode-banner");
+    if (!el) return;
+    if (!mode || mode === "default") {
+      el.classList.add("hidden");
+      el.textContent = "";
+      return;
+    }
+    el.classList.remove("hidden");
+    if (mode === "process_design") {
+      el.textContent = `Tryb projektowania BPMN${sidecarOk ? " — sidecar OK" : " — sidecar niedostępny (Docker :8000)"}`;
+    } else if (mode === "deployment") {
+      el.textContent = "Tryb planu wdrożenia — poniżej strukturalny plan instalacji.";
+    } else {
+      el.textContent = `Tryb: ${mode}`;
+    }
+  }
+
+  function renderDeploymentPlan(plan) {
+    const host = $("#chat-deployment-panel");
+    if (!host || !plan) return;
+    host.classList.remove("hidden");
+    const vis = plan.visibility || {};
+    const steps = plan.steps || [];
+    const gaps = plan.gaps || [];
+    const paths = plan.recommended_paths || {};
+    let html = `<div class="deployment-card"><h3>Plan wdrożenia</h3>`;
+    if (vis.summary_pl) {
+      html += `<p>${escapeHtml(vis.summary_pl)}</p>`;
+    }
+    if (paths.clone_root) {
+      html += `<p class="muted">Ścieżka projektów: <code>${escapeHtml(paths.clone_root)}</code></p>`;
+    }
+    if (steps.length) {
+      html += `<ul class="deployment-steps">`;
+      steps.forEach((s) => {
+        html += `<li class="deployment-step"><h4>${s.order}. ${escapeHtml(s.title)}</h4>`;
+        html += `<p>${escapeHtml(s.body || "")}</p>`;
+        (s.commands || []).forEach((cmd) => {
+          html += `<pre class="code-block">${escapeHtml(cmd)}</pre>`;
+          html += `<button type="button" class="btn-secondary action-run-btn" data-cmd="${escapeHtml(cmd)}">▶ Wykonaj</button>`;
+        });
+        html += `</li>`;
+      });
+      html += `</ul>`;
+    }
+    gaps.forEach((g) => {
+      html += `<p class="muted">${escapeHtml(g)}</p>`;
+    });
+    html += `</div>`;
+    host.innerHTML = html;
+    host.querySelectorAll(".action-run-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const cmd = btn.getAttribute("data-cmd");
+        if (cmd) confirmAndRunCommand(cmd, btn.parentElement);
+      });
+    });
+  }
+
+  function clearDeploymentPanel() {
+    const host = $("#chat-deployment-panel");
+    if (!host) return;
+    host.classList.add("hidden");
+    host.innerHTML = "";
   }
 
   function parseSseBuffer(buffer) {
@@ -871,6 +943,8 @@
       options.voiceReply !== undefined ? options.voiceReply : shouldAutoPlayVoice();
 
     stopTts();
+    clearDeploymentPanel();
+    setChatModeBanner(null);
     appendChatMessage("user", msg);
     const { wrap: assistantWrap, body: pending } = createAssistantMessageShell();
     const submitBtn = $("#chat-submit");
@@ -920,12 +994,19 @@
               chatSessionId = data.session_id;
               updateSessionLabel();
             }
+            setChatModeBanner(data.response_mode, data.sidecar_ok);
             if (data.citations) {
               renderChatCitations(data.citations, {
                 focus_guide: data.focus_guide,
                 weak_context: data.weak_context,
+                missing_howto: data.missing_howto,
+                response_mode: data.response_mode,
               });
             }
+          } else if (event === "deployment" && data.deployment_plan) {
+            renderDeploymentPlan(data.deployment_plan);
+          } else if (event === "bpmn" && data.bpmn_xml) {
+            renderBpmnInline(data.bpmn_xml, pending.parentElement);
           } else if (event === "token" && data.text) {
             fullText += data.text;
             pending.textContent = fullText;
@@ -938,7 +1019,13 @@
               renderChatCitations(data.citations, {
                 focus_guide: data.focus_guide,
                 weak_context: data.weak_context,
+                missing_howto: data.missing_howto,
+                response_mode: data.response_mode,
               });
+            }
+            if (data.deployment_plan) renderDeploymentPlan(data.deployment_plan);
+            if (data.process_design?.bpmn_xml) {
+              renderBpmnInline(data.process_design.bpmn_xml, pending.parentElement);
             }
           } else if (event === "error") {
             throw new Error(data.detail || "Błąd streamingu.");
@@ -1401,6 +1488,128 @@
     if (s == null) return "";
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
+
+  // --- Phase C: BPMN designer tab ---
+
+  let bpmnViewer = null;
+  let currentBpmnXml = "";
+  let currentDesignId = null;
+
+  async function refreshBpmnSidecarStatus() {
+    const el = $("#bpmn-sidecar-status");
+    const iframe = $("#bpmn-fallback-iframe");
+    if (!el) return;
+    try {
+      const [health, cfg] = await Promise.all([
+        fetch("/api/bpmn-assistant/health").then((r) => r.json()),
+        fetch("/api/config").then((r) => r.json()).catch(() => ({})),
+      ]);
+      const feUrl = cfg?.bpmn_assistant?.frontend_url || "http://127.0.0.1:8080";
+      if (health.ok) {
+        el.textContent = "🟢 Sidecar API :8000";
+        el.className = "bpmn-status ok";
+        if (iframe) iframe.classList.add("hidden");
+      } else {
+        el.textContent = "🔴 Sidecar niedostępny — uruchom docker-compose w /mnt/ollama/projekty/bpmn-assistant";
+        el.className = "bpmn-status err";
+        if (iframe) {
+          iframe.src = feUrl;
+          iframe.classList.remove("hidden");
+        }
+      }
+      const editorLink = $("#bpmn-open-editor");
+      if (editorLink) editorLink.href = feUrl;
+    } catch {
+      el.textContent = "🔴 Nie można sprawdzić sidecar";
+      el.className = "bpmn-status err";
+    }
+  }
+
+  async function renderBpmnXml(xml, canvasId = "bpmn-canvas") {
+    const container = document.getElementById(canvasId);
+    if (!container || !xml) return;
+    currentBpmnXml = xml;
+    const BpmnViewer = window.BpmnJS || window.BpmnNavigatedViewer;
+    if (!BpmnViewer) {
+      container.textContent = "Brak biblioteki bpmn-js — diagram zapisany, podgląd niedostępny.";
+      return;
+    }
+    if (bpmnViewer) {
+      try { bpmnViewer.destroy(); } catch { /* ignore */ }
+      bpmnViewer = null;
+    }
+    container.innerHTML = "";
+    bpmnViewer = new BpmnViewer({ container });
+    try {
+      await bpmnViewer.importXML(xml);
+      const canvas = bpmnViewer.get("canvas");
+      canvas.zoom("fit-viewport");
+    } catch (e) {
+      container.textContent = `Błąd renderowania BPMN: ${e.message}`;
+    }
+    const exportBtn = $("#bpmn-export");
+    const reviseBtn = $("#bpmn-revise");
+    if (exportBtn) exportBtn.disabled = !xml;
+    if (reviseBtn) reviseBtn.disabled = !currentDesignId;
+  }
+
+  function renderBpmnInline(xml, parentEl) {
+    if (!parentEl || !xml) return;
+    const box = document.createElement("div");
+    box.className = "bpmn-inline-preview";
+    const note = document.createElement("p");
+    note.className = "muted";
+    note.textContent = "Diagram BPMN wygenerowany — otwórz zakładkę Projektuj BPMN po pełny podgląd.";
+    box.appendChild(note);
+    parentEl.appendChild(box);
+    renderBpmnXml(xml);
+  }
+
+  async function generateBpmnFromTab(revise = false) {
+    const promptEl = $("#bpmn-prompt");
+    const narrativeEl = $("#bpmn-narrative");
+    const msg = promptEl?.value?.trim();
+    if (!msg) return;
+    if (narrativeEl) narrativeEl.textContent = "Generuję diagram…";
+    try {
+      const url = revise && currentDesignId
+        ? `/api/process-design/sessions/${currentDesignId}/revise`
+        : "/api/process-design/generate";
+      const body = revise && currentDesignId
+        ? { message: msg }
+        : { message: msg, design_id: currentDesignId || undefined };
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      currentDesignId = data.design_id;
+      if (narrativeEl) narrativeEl.textContent = data.narrative_pl || "";
+      if (data.bpmn_xml) await renderBpmnXml(data.bpmn_xml);
+      else if (narrativeEl) narrativeEl.textContent = data.narrative_pl || "Sidecar niedostępny.";
+    } catch (e) {
+      if (narrativeEl) narrativeEl.textContent = `Błąd: ${e.message}`;
+    }
+  }
+
+  function exportBpmnFile() {
+    if (!currentBpmnXml) return;
+    const blob = new Blob([currentBpmnXml], { type: "application/xml" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `proces-${(currentDesignId || "diagram").slice(0, 8)}.bpmn`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  $("#bpmn-generate")?.addEventListener("click", () => generateBpmnFromTab(false));
+  $("#bpmn-revise")?.addEventListener("click", () => generateBpmnFromTab(true));
+  $("#bpmn-export")?.addEventListener("click", exportBpmnFile);
+
+  refreshBpmnSidecarStatus();
+  setInterval(refreshBpmnSidecarStatus, 60_000);
 
   refreshHealth();
   setInterval(refreshHealth, 60_000);

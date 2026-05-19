@@ -35,6 +35,11 @@ _FOCUS_SLUG_ALIASES: List[Tuple[Tuple[str, ...], str]] = [
             "bpm-assistant",
             "bpm assistanta",
             "bpmn asystent",
+            "bpmn-assistent",
+            "bpmn assistent",
+            "bpmn-assistenta",
+            "assistent",
+            "assistenta",
             "asystenta",
         ),
         "bpmn-assistant",
@@ -148,10 +153,19 @@ def detect_focus_guide(
                 score += 20
         if "bpm" in combined and "asyst" in combined and "bpmn-assistant" in slug_norm:
             score += 18
+        if any(
+            tok in combined
+            for tok in ("assistent", "assistenta", "bpmn-assistent", "bpmn assistent")
+        ) and "bpmn-assistant" in slug_norm:
+            score += 22
         # "BPM" alone matches many guides — prefer slug alias, penalize wrong BPM project.
-        if ("asystent" in combined or "assistant" in combined) and "asystent" not in title_norm:
+        if (
+            "asystent" in combined
+            or "assistant" in combined
+            or "assistent" in combined
+        ) and "asystent" not in title_norm and "assistant" not in title_norm:
             if "layout" in title_norm or "generator" in title_norm:
-                score -= 15
+                score -= 18
         if "noisetorch" in combined and "noisetorch" in title_norm:
             score += 4
         if score > best_score:
