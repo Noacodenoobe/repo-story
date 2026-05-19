@@ -25,6 +25,7 @@
   <nav class="tabs" role="tablist">
     <button class="tab tab-active" data-tab="analyze">🔍 Nowy przewodnik</button>
     <button class="tab" data-tab="history">📚 Historia</button>
+    <button class="tab" data-tab="projects">📁 Moje projekty</button>
     <button class="tab" data-tab="chat">💬 Rozmowa</button>
     <button class="tab" data-tab="diag">⚙️ Diagnostyka</button>
     <button class="tab" data-tab="help">❓ Pomoc</button>
@@ -97,13 +98,36 @@
       </div>
     </section>
 
+    <section class="panel" id="tab-projects">
+      <div class="card">
+        <h2>Moje projekty</h2>
+        <p class="muted">Przeanalizowane repozytoria — status indeksu w bazie wiedzy RAG.</p>
+        <div class="row">
+          <button type="button" class="btn-secondary" id="projects-refresh">🔄 Odśwież</button>
+        </div>
+        <div id="projects-list" class="projects-list"></div>
+      </div>
+    </section>
+
     <section class="panel" id="tab-chat">
       <div class="card">
         <h2>Rozmowa z bazą wiedzy</h2>
-        <p class="muted">Pytaj o instalację i konfigurację — odpowiedzi z przewodników i profilu systemu. Mikrofon: kliknij 🎤 aby włączyć/wyłączyć nagrywanie.</p>
+        <p class="muted">Pytaj o instalację i konfigurację — odpowiedzi z przewodników, notatek i profilu systemu. Mikrofon: kliknij 🎤 aby włączyć/wyłączyć nagrywanie.</p>
+        <div id="kb-empty-banner" class="kb-banner hidden" role="status"></div>
+        <div class="chat-session-bar row">
+          <span id="chat-session-label" class="muted">Sesja: nowa</span>
+          <button type="button" class="btn-secondary" id="chat-new-session">🆕 Nowa rozmowa</button>
+        </div>
         <label class="chat-voice-toggle muted">
           <input type="checkbox" id="chat-voice-reply" checked />
           Odtwarzaj odpowiedzi głosem (krótsze odpowiedzi; po 🎤 włącza się automatycznie)
+        </label>
+        <label class="chat-voice-toggle muted">
+          Głos TTS:
+          <select id="tts-backend-select" aria-label="Silnik TTS">
+            <option value="piper">Piper</option>
+            <option value="supertonic">Supertonic</option>
+          </select>
         </label>
         <div id="chat-messages" class="chat-messages"></div>
         <form id="chat-form" class="chat-form">
@@ -131,6 +155,25 @@
         </div>
         <pre id="diag-kb" class="code-block muted">Baza wiedzy…</pre>
         <pre id="diag-output" class="code-block">…</pre>
+      </div>
+      <div class="card">
+        <h3>Notatnik (RAG)</h3>
+        <p class="muted">Twoje notatki są cytowane w rozmowie jako „Moja notatka”.</p>
+        <div id="notes-list" class="notes-list"></div>
+        <form id="note-form" class="note-form">
+          <input type="hidden" id="note-edit-id" value="" />
+          <label for="note-title">Tytuł</label>
+          <input type="text" id="note-title" required maxlength="200" />
+          <label for="note-tags">Tagi (opcjonalnie)</label>
+          <input type="text" id="note-tags" maxlength="500" placeholder="audio, linux" />
+          <label for="note-body">Treść</label>
+          <textarea id="note-body" rows="4" required maxlength="20000"></textarea>
+          <div class="row">
+            <button type="submit" class="btn-primary" id="note-save">💾 Zapisz notatkę</button>
+            <button type="button" class="btn-secondary" id="note-cancel" hidden>Anuluj</button>
+            <button type="button" class="btn-secondary" id="notes-reindex">🔄 Przeindeksuj</button>
+          </div>
+        </form>
       </div>
       <div class="card">
         <h3>Konfiguracja</h3>

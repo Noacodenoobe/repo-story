@@ -6,6 +6,7 @@ Prezentacja edukacyjna „zero tech” + opcjonalna analiza techniczna.
 from __future__ import annotations
 
 import logging
+import subprocess
 import sys
 import time
 import traceback
@@ -35,6 +36,9 @@ from .rag_chat import RagChatService
 from .stt_service import SttError, SttService
 from .system_profile import SystemProfileService
 from .tts_service import TtsError, TtsService
+from .user_notes_service import UserNotesService
+from .action_runner import assess_risk, run_command, validate_command
+from .projects_service import ProjectsService
 
 
 config.LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -100,6 +104,8 @@ stt_service = SttService()
 tts_service = TtsService()
 system_profile_svc = SystemProfileService()
 knowledge_store = KnowledgeStore()
+user_notes_svc = UserNotesService(store=knowledge_store, indexer=guide_indexer)
+projects_svc = ProjectsService(kb=kb, store=knowledge_store)
 
 
 class ChatRequest(BaseModel):
@@ -114,6 +120,27 @@ class ChatRequest(BaseModel):
 class TtsRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=8000)
     voice: str = Field("pl", description="Voice preset (reserved)")
+    backend: Optional[str] = Field(None, description="piper | supertonic")
+
+
+class UserNoteCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    body: str = Field(..., min_length=1, max_length=20000)
+    tags: Optional[str] = Field(None, max_length=500)
+
+
+class UserNoteUpdate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    body: str = Field(..., min_length=1, max_length=20000)
+    tags: Optional[str] = Field(None, max_length=500)
+
+
+class ActionRunRequest(BaseModel):
+    command: str = Field(..., min_length=1, max_length=2000)
+    confirmed: bool = Field(
+        False,
+        description="Must be true to execute; false returns risk assessment only",
+    )
 
 
 class ProfileUploadRequest(BaseModel):
@@ -296,12 +323,34 @@ def list_reports(q: Optional[str] = Query(None)) -> Dict[str, Any]:
     return {"count": len(items), "items": items}
 
 
+def _build_install_checklist(record_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Build checklist items from education pack howto steps (Phase B3)."""
+    edu = record_dict.get("education_pack") or record_dict.get("lesson_deck") or {}
+    items: List[Dict[str, Any]] = []
+    for step in edu.get("howto") or []:
+        step_no = step.get("step") or len(items) + 1
+        title = step.get("title") or f"Krok {step_no}"
+        body = step.get("body") or ""
+        cmds = step.get("commands") or []
+        text = f"{title}. {body}".strip()
+        if cmds:
+            text += " Komendy: " + " | ".join(str(c) for c in cmds)
+        items.append({
+            "id": f"step-{step_no}",
+            "text": text,
+            "done": False,
+        })
+    return items
+
+
 @app.get("/api/reports/{record_id}")
 def get_report(record_id: str) -> Dict[str, Any]:
     record = kb.load(record_id)
     if not record:
         raise HTTPException(status_code=404, detail=f"Brak raportu: {record_id}")
-    return record.to_dict()
+    data = record.to_dict()
+    data["install_checklist"] = _build_install_checklist(data)
+    return data
 
 
 @app.delete("/api/reports/{record_id}", response_model=GenericMessage)
@@ -379,11 +428,17 @@ async def stt_transcribe(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get("/api/tts/backends")
+def tts_backends() -> Dict[str, Any]:
+    """List available TTS backends on this host."""
+    return tts_service.available_backends()
+
+
 @app.post("/api/tts/speak")
 def tts_speak(req: TtsRequest) -> FileResponse:
-    """Synthesize Polish speech (Piper offline). Returns audio/wav."""
+    """Synthesize Polish speech (Piper or Supertonic). Returns audio/wav."""
     try:
-        wav_path = tts_service.synthesize_wav(req.text)
+        wav_path = tts_service.synthesize_wav(req.text, backend=req.backend)
         return FileResponse(
             wav_path,
             media_type="audio/wav",
@@ -466,6 +521,80 @@ def migrate_knowledge() -> Dict[str, Any]:
     from .migrate_reports import migrate_all
     count = migrate_all()
     return {"migrated": count, "stats": knowledge_store.stats()}
+
+
+# --- Phase A2: user notes ---
+
+
+@app.get("/api/user-notes")
+def list_user_notes() -> Dict[str, Any]:
+    """List personal notes stored in SQLite."""
+    notes = user_notes_svc.list_notes()
+    return {"count": len(notes), "items": notes}
+
+
+@app.post("/api/user-notes", status_code=201)
+def create_user_note(req: UserNoteCreate) -> Dict[str, Any]:
+    """Create a note and index it for RAG."""
+    note = user_notes_svc.create_note(req.title, req.body, req.tags)
+    return note
+
+
+@app.put("/api/user-notes/{note_id}")
+def update_user_note(note_id: str, req: UserNoteUpdate) -> Dict[str, Any]:
+    """Update note and refresh embeddings."""
+    try:
+        return user_notes_svc.update_note(note_id, req.title, req.body, req.tags)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.delete("/api/user-notes/{note_id}", response_model=GenericMessage)
+def delete_user_note(note_id: str) -> Dict[str, str]:
+    """Delete note and RAG chunks."""
+    if user_notes_svc.delete_note(note_id):
+        return {"detail": "Usunięto notatkę."}
+    raise HTTPException(status_code=404, detail=f"Brak notatki: {note_id}")
+
+
+@app.post("/api/user-notes/reindex")
+def reindex_user_notes() -> Dict[str, Any]:
+    """Rebuild embeddings for all user notes."""
+    count = user_notes_svc.reindex_all()
+    return {"reindexed": count, "stats": knowledge_store.stats()}
+
+
+# --- Phase B1: safe command execution ---
+
+
+@app.post("/api/actions/run")
+def actions_run(req: ActionRunRequest) -> Dict[str, Any]:
+    """Run a whitelisted shell command after user confirmation."""
+    if not req.confirmed:
+        return assess_risk(req.command)
+    try:
+        return run_command(req.command)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(status_code=504, detail="Przekroczono limit czasu komendy.") from exc
+
+
+@app.get("/api/actions/validate")
+def actions_validate(command: str = Query(..., min_length=1)) -> Dict[str, Any]:
+    """Check if a command is on the whitelist."""
+    ok, reason = validate_command(command)
+    return {"allowed": ok, "reason": reason, "command": command}
+
+
+# --- Phase B2: project catalog ---
+
+
+@app.get("/api/projects")
+def list_projects() -> Dict[str, Any]:
+    """List analyzed repositories with KB indexing status."""
+    items = projects_svc.list_projects()
+    return {"count": len(items), "items": items}
 
 
 if config.FRONTEND_DIR.exists():

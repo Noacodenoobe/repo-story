@@ -17,6 +17,16 @@ from . import config
 logger = logging.getLogger(__name__)
 
 
+def _default_chunk_title(source_type: str) -> str:
+    """Human label when guide title is missing."""
+    labels = {
+        "system": "Profil systemu",
+        "rules": "Regulamin hosta",
+        "user_note": "Moja notatka",
+    }
+    return labels.get(source_type or "", "Baza wiedzy")
+
+
 class KnowledgeStore:
     """Persistent knowledge base for guides and RAG."""
 
@@ -69,6 +79,14 @@ class KnowledgeStore:
                     collected_at REAL,
                     json_blob TEXT,
                     summary_text TEXT
+                );
+                CREATE TABLE IF NOT EXISTS user_notes (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    tags TEXT,
+                    created_at REAL,
+                    updated_at REAL
                 );
                 CREATE INDEX IF NOT EXISTS idx_chunks_guide ON chunks(guide_id);
                 CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_messages(session_id);
@@ -189,7 +207,7 @@ class KnowledgeStore:
                 "section": row["section"],
                 "text": row["text"],
                 "metadata": json.loads(row["metadata_json"] or "{}"),
-                "guide_title": row["guide_title"] or "Profil systemu",
+                "guide_title": row["guide_title"] or _default_chunk_title(row["source_type"]),
             }))
         scored.sort(key=lambda x: -x[0])
         return scored[:top_k]
@@ -274,6 +292,7 @@ class KnowledgeStore:
             guides = conn.execute("SELECT COUNT(*) AS c FROM guides").fetchone()["c"]
             chunks = conn.execute("SELECT COUNT(*) AS c FROM chunks").fetchone()["c"]
             embedded = conn.execute("SELECT COUNT(*) AS c FROM chunk_embeddings").fetchone()["c"]
+            notes = conn.execute("SELECT COUNT(*) AS c FROM user_notes").fetchone()["c"]
             profile = conn.execute(
                 "SELECT collected_at FROM system_profile WHERE id = 1"
             ).fetchone()
@@ -281,6 +300,113 @@ class KnowledgeStore:
             "guides": guides,
             "chunks": chunks,
             "embedded_chunks": embedded,
+            "user_notes": notes,
             "profile_collected_at": profile["collected_at"] if profile else None,
             "db_path": str(self.db_path),
+            "kb_empty_chunk_threshold": config.KB_EMPTY_CHUNK_THRESHOLD,
         }
+
+    # --- User notes (Phase A2) ---
+
+    def list_user_notes(self) -> List[Dict[str, Any]]:
+        """Return all user notes ordered by updated_at desc."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, title, body, tags, created_at, updated_at
+                FROM user_notes ORDER BY updated_at DESC
+                """
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_user_note(self, note_id: str) -> Optional[Dict[str, Any]]:
+        """Return one user note or None."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, title, body, tags, created_at, updated_at
+                FROM user_notes WHERE id = ?
+                """,
+                (note_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def upsert_user_note(self, note: Dict[str, Any]) -> None:
+        """Insert or update a user note row."""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO user_notes (id, title, body, tags, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title=excluded.title,
+                    body=excluded.body,
+                    tags=excluded.tags,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    note["id"],
+                    note["title"],
+                    note["body"],
+                    note.get("tags") or "",
+                    note.get("created_at") or time.time(),
+                    note.get("updated_at") or time.time(),
+                ),
+            )
+
+    def delete_user_note(self, note_id: str) -> None:
+        """Remove user note row."""
+        with self._connect() as conn:
+            conn.execute("DELETE FROM user_notes WHERE id = ?", (note_id,))
+
+    def delete_chunks_for_user_note(self, note_id: str) -> None:
+        """Remove RAG chunks linked to a user note."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id FROM chunks
+                WHERE source_type = 'user_note'
+                  AND json_extract(metadata_json, '$.note_id') = ?
+                """,
+                (note_id,),
+            ).fetchall()
+            for row in rows:
+                conn.execute(
+                    "DELETE FROM chunk_embeddings WHERE chunk_id = ?",
+                    (row["id"],),
+                )
+            conn.execute(
+                """
+                DELETE FROM chunks
+                WHERE source_type = 'user_note'
+                  AND json_extract(metadata_json, '$.note_id') = ?
+                """,
+                (note_id,),
+            )
+
+    def delete_all_user_note_chunks(self) -> None:
+        """Remove all chunks with source_type user_note."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id FROM chunks WHERE source_type = 'user_note'"
+            ).fetchall()
+            for row in rows:
+                conn.execute(
+                    "DELETE FROM chunk_embeddings WHERE chunk_id = ?",
+                    (row["id"],),
+                )
+            conn.execute("DELETE FROM chunks WHERE source_type = 'user_note'")
+
+    def list_guide_ids(self) -> List[str]:
+        """Return guide ids present in the guides table."""
+        with self._connect() as conn:
+            rows = conn.execute("SELECT id FROM guides").fetchall()
+        return [str(r["id"]) for r in rows]
+
+    def list_guides(self) -> List[Dict[str, Any]]:
+        """Return guide metadata (id, title, slug, url) for retrieval boosting."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, title, slug, url FROM guides ORDER BY created_at DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]

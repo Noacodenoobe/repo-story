@@ -33,8 +33,16 @@
       $$(".tab").forEach((b) => b.classList.toggle("tab-active", b === btn));
       $$(".panel").forEach((p) => p.classList.toggle("panel-active", p.id === `tab-${tab}`));
       if (tab === "history") refreshHistory();
-      if (tab === "diag") refreshDiagnostics();
-      if (tab === "chat") refreshChatHint();
+      if (tab === "projects") refreshProjects();
+      if (tab === "diag") {
+        refreshDiagnostics();
+        refreshNotesList();
+      }
+      if (tab === "chat") {
+        refreshChatHint();
+        refreshKbBanner();
+        updateSessionLabel();
+      }
     });
   });
 
@@ -255,14 +263,47 @@
 
   function renderHowto(p) {
     const steps = p.howto || [];
+    const reportId = lastResult?.id || "guide";
+    const storageKey = `checklist-${reportId}`;
+    let saved = {};
+    try {
+      saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
+    } catch {
+      saved = {};
+    }
     $("#sec-howto").innerHTML = `
       <h3>🛠️ Instrukcja instalacji i uruchomienia</h3>
-      ${steps.map((h) => `
-        <div class="howto-step">
-          <h4>Krok ${h.step}: ${escapeHtml(h.title)}</h4>
-          <p>${escapeHtml(h.body)}</p>
-          ${(h.commands || []).length ? `<pre class="code-block">${(h.commands || []).map(escapeHtml).join("\n")}</pre>` : ""}
-        </div>`).join("") || "<p class='muted'>Brak instrukcji.</p>"}`;
+      <p class="muted">Odhacz wykonane kroki — stan zostanie zapisany w przeglądarce.</p>
+      <ul class="install-checklist">
+        ${steps.map((h) => {
+          const cid = `step-${h.step}`;
+          const checked = saved[cid] ? "checked" : "";
+          return `
+          <li class="checklist-item">
+            <label>
+              <input type="checkbox" class="checklist-cb" data-check-id="${escapeHtml(cid)}" data-storage-key="${escapeHtml(storageKey)}" ${checked} />
+              <strong>Krok ${h.step}: ${escapeHtml(h.title)}</strong>
+              <span>${escapeHtml(h.body)}</span>
+            </label>
+            ${(h.commands || []).length ? `<pre class="code-block">${(h.commands || []).map(escapeHtml).join("\n")}</pre>` : ""}
+          </li>`;
+        }).join("")}
+      </ul>
+      ${!steps.length ? "<p class='muted'>Brak instrukcji.</p>" : ""}`;
+    $("#sec-howto")?.querySelectorAll(".checklist-cb").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const key = cb.dataset.storageKey;
+        let state = {};
+        try {
+          state = JSON.parse(localStorage.getItem(key) || "{}");
+        } catch {
+          state = {};
+        }
+        if (cb.checked) state[cb.dataset.checkId] = true;
+        else delete state[cb.dataset.checkId];
+        localStorage.setItem(key, JSON.stringify(state));
+      });
+    });
   }
 
   function renderModify(p) {
@@ -695,10 +736,11 @@
     chatTtsAbort = new AbortController();
     showTtsBar(true);
     try {
+      const ttsBackend = $("#tts-backend-select")?.value || "piper";
       const res = await fetch("/api/tts/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: lastTtsText }),
+        body: JSON.stringify({ text: lastTtsText, backend: ttsBackend }),
         signal: chatTtsAbort.signal,
       });
       if (!res.ok) {
@@ -786,9 +828,17 @@
       .join("\n");
   }
 
-  function renderChatCitations(citations) {
+  function renderChatCitations(citations, meta = {}) {
+    const lines = [];
+    if (meta.focus_guide) {
+      lines.push(`Temat: ${meta.focus_guide}`);
+    }
+    if (meta.weak_context) {
+      lines.push("Uwaga: mało trafnych fragmentów w bazie — odpowiedź może być ogólna.");
+    }
     const cites = formatCitations(citations);
-    $("#chat-citations").textContent = cites ? `Źródła:\n${cites}` : "";
+    if (cites) lines.push(`Źródła:\n${cites}`);
+    $("#chat-citations").textContent = lines.join("\n") || "";
   }
 
   function parseSseBuffer(buffer) {
@@ -866,8 +916,16 @@
 
         for (const { event, data } of events) {
           if (event === "meta") {
-            if (data.session_id) chatSessionId = data.session_id;
-            if (data.citations) renderChatCitations(data.citations);
+            if (data.session_id) {
+              chatSessionId = data.session_id;
+              updateSessionLabel();
+            }
+            if (data.citations) {
+              renderChatCitations(data.citations, {
+                focus_guide: data.focus_guide,
+                weak_context: data.weak_context,
+              });
+            }
           } else if (event === "token" && data.text) {
             fullText += data.text;
             pending.textContent = fullText;
@@ -876,7 +934,12 @@
           } else if (event === "done") {
             if (data.session_id) chatSessionId = data.session_id;
             if (data.full_answer) fullText = data.full_answer;
-            if (data.citations) renderChatCitations(data.citations);
+            if (data.citations) {
+              renderChatCitations(data.citations, {
+                focus_guide: data.focus_guide,
+                weak_context: data.weak_context,
+              });
+            }
           } else if (event === "error") {
             throw new Error(data.detail || "Błąd streamingu.");
           }
@@ -885,7 +948,7 @@
 
       pending.classList.remove("chat-msg-streaming");
       const answer = fullText || "(brak odpowiedzi)";
-      pending.textContent = answer;
+      renderAssistantMessage(pending, answer);
       attachAssistantTtsControls(assistantWrap, answer);
       const playNow = autoVoice && fullText;
       if (playNow) {
@@ -908,15 +971,285 @@
     }
   }
 
+  const KB_EMPTY_THRESHOLD = 5;
+
+  function getTtsBackend() {
+    return $("#tts-backend-select")?.value || localStorage.getItem("tts-backend") || "piper";
+  }
+
+  $("#tts-backend-select")?.addEventListener("change", (ev) => {
+    localStorage.setItem("tts-backend", ev.target.value);
+  });
+
+  (function initTtsBackend() {
+    const saved = localStorage.getItem("tts-backend");
+    const sel = $("#tts-backend-select");
+    if (sel && saved) sel.value = saved;
+    fetch("/api/tts/backends")
+      .then((r) => r.json())
+      .then((b) => {
+        if (sel && b.supertonic && !saved) sel.value = "supertonic";
+        if (sel && !b.supertonic) {
+          const opt = sel.querySelector('option[value="supertonic"]');
+          if (opt) opt.disabled = true;
+        }
+      })
+      .catch(() => {});
+  })();
+
+  function updateSessionLabel() {
+    const el = $("#chat-session-label");
+    if (!el) return;
+    if (!chatSessionId) {
+      el.textContent = "Sesja: nowa";
+      return;
+    }
+    el.textContent = `Sesja: ${chatSessionId.slice(0, 8)}…`;
+  }
+
+  $("#chat-new-session")?.addEventListener("click", () => {
+    chatSessionId = null;
+    $("#chat-messages").innerHTML = "";
+    $("#chat-citations").textContent = "";
+    updateSessionLabel();
+    appendChatMessage("system", "Rozpoczęto nową rozmowę — poprzedni kontekst nie jest już używany.");
+  });
+
+  async function refreshKbBanner() {
+    const banner = $("#kb-empty-banner");
+    if (!banner) return;
+    try {
+      const s = await (await fetch("/api/knowledge/stats")).json();
+      const threshold = s.kb_empty_chunk_threshold || KB_EMPTY_THRESHOLD;
+      if ((s.chunks || 0) < threshold) {
+        banner.classList.remove("hidden");
+        banner.innerHTML = `
+          <p><strong>Baza wiedzy jest prawie pusta</strong> (${s.chunks || 0} fragmentów).</p>
+          <p>Wygeneruj przewodnik w zakładce <em>Nowy</em> lub uzupełnij bazę:</p>
+          <div class="row kb-banner-actions">
+            <button type="button" class="btn-secondary" id="kb-migrate-btn">📥 Migruj raporty</button>
+            <button type="button" class="btn-secondary" id="kb-profile-btn">🖥️ Odśwież profil</button>
+          </div>`;
+        $("#kb-migrate-btn")?.addEventListener("click", async () => {
+          banner.textContent = "Migruję raporty…";
+          const res = await fetch("/api/knowledge/migrate", { method: "POST" });
+          const data = await res.json();
+          banner.textContent = res.ok
+            ? `Zmigrowano: ${data.migrated}. Fragmentów: ${data.stats?.chunks || "?"}.`
+            : `Błąd migracji.`;
+          if (res.ok) setTimeout(refreshKbBanner, 1500);
+        });
+        $("#kb-profile-btn")?.addEventListener("click", async () => {
+          banner.textContent = "Odświeżam profil…";
+          const res = await fetch("/api/system-profile/refresh", { method: "POST" });
+          const data = await res.json();
+          banner.textContent = res.ok ? "Profil zaktualizowany." : (data.detail || "Błąd.");
+          if (res.ok) setTimeout(refreshKbBanner, 1500);
+        });
+      } else {
+        banner.classList.add("hidden");
+        banner.innerHTML = "";
+      }
+    } catch {
+      banner.classList.add("hidden");
+    }
+  }
+
+  function parseRunBlocks(text) {
+    const re = /```run\s*\n([\s\S]*?)```/gi;
+    const blocks = [];
+    let match;
+    while ((match = re.exec(text)) !== null) {
+      blocks.push({ cmd: match[1].trim(), index: match.index, full: match[0] });
+    }
+    return blocks;
+  }
+
+  function stripRunBlocks(text) {
+    return text.replace(/```run\s*\n[\s\S]*?```/gi, "").trim();
+  }
+
+  function renderAssistantMessage(container, text) {
+    const display = stripRunBlocks(text);
+    container.textContent = display || text;
+    const blocks = parseRunBlocks(text);
+    blocks.forEach((b) => {
+      const box = document.createElement("div");
+      box.className = "action-run-block";
+      const pre = document.createElement("pre");
+      pre.className = "code-block";
+      pre.textContent = b.cmd;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn-secondary action-run-btn";
+      btn.textContent = "▶ Wykonaj (potwierdź)";
+      btn.addEventListener("click", () => confirmAndRunCommand(b.cmd, box));
+      box.append(pre, btn);
+      container.parentElement?.appendChild(box);
+    });
+  }
+
+  async function confirmAndRunCommand(cmd, resultHost) {
+    if (!confirm(`Czy na pewno wykonać?\n\n${cmd}\n\nBez sudo — tylko dozwolone komendy.`)) return;
+    const out = document.createElement("pre");
+    out.className = "code-block action-run-output";
+    out.textContent = "Wykonuję…";
+    resultHost.appendChild(out);
+    try {
+      const res = await fetch("/api/actions/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: cmd, confirmed: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      out.textContent = [
+        `exit: ${data.exit_code}`,
+        data.stdout ? `stdout:\n${data.stdout}` : "",
+        data.stderr ? `stderr:\n${data.stderr}` : "",
+      ].filter(Boolean).join("\n");
+    } catch (e) {
+      out.textContent = `Błąd: ${e.message}`;
+    }
+  }
+
+  async function refreshProjects() {
+    const list = $("#projects-list");
+    if (!list) return;
+    list.innerHTML = "<p class='muted'>Ładuję…</p>";
+    try {
+      const data = await (await fetch("/api/projects")).json();
+      if (!data.items?.length) {
+        list.innerHTML = "<p class='muted'>Brak przeanalizowanych projektów — wygeneruj przewodnik w zakładce Nowy.</p>";
+        return;
+      }
+      list.innerHTML = data.items.map((p) => `
+        <div class="projects-item">
+          <div>
+            <strong>${escapeHtml(p.title || p.slug)}</strong>
+            <span class="muted">${escapeHtml(p.analyzed_at_iso || "")}</span>
+          </div>
+          <p class="muted">${escapeHtml(p.url || "")}</p>
+          <p>${p.has_guide_in_kb ? "✅ W bazie RAG" : "⚠️ Brak w RAG — uruchom migrację"}</p>
+          <button type="button" class="btn-secondary btn-open-project" data-id="${escapeHtml(p.report_id)}">👁️ Otwórz</button>
+        </div>`).join("");
+      list.querySelectorAll(".btn-open-project").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.id;
+          const data = await (await fetch(`/api/reports/${id}`)).json();
+          lastResult = { ...data, duration_s: 0, repo_info: data.repo_info };
+          $$(".tab").forEach((b) => b.classList.toggle("tab-active", b.dataset.tab === "analyze"));
+          $$(".panel").forEach((p) => p.classList.toggle("panel-active", p.id === "tab-analyze"));
+          renderEducation(lastResult);
+        });
+      });
+    } catch (e) {
+      list.innerHTML = `<p class='muted'>${escapeHtml(e.message)}</p>`;
+    }
+  }
+
+  $("#projects-refresh")?.addEventListener("click", refreshProjects);
+
+  async function refreshNotesList() {
+    const list = $("#notes-list");
+    if (!list) return;
+    try {
+      const data = await (await fetch("/api/user-notes")).json();
+      if (!data.items?.length) {
+        list.innerHTML = "<p class='muted'>Brak notatek.</p>";
+        return;
+      }
+      list.innerHTML = data.items.map((n) => `
+        <div class="note-item" data-id="${escapeHtml(n.id)}">
+          <strong>${escapeHtml(n.title)}</strong>
+          <span class="muted">${escapeHtml(n.tags || "")}</span>
+          <div class="note-actions">
+            <button type="button" class="btn-icon note-edit" data-id="${escapeHtml(n.id)}">✏️</button>
+            <button type="button" class="btn-icon note-del" data-id="${escapeHtml(n.id)}">🗑️</button>
+          </div>
+        </div>`).join("");
+      list.querySelectorAll(".note-edit").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.id;
+          const items = data.items.filter((x) => x.id === id);
+          if (!items[0]) return;
+          $("#note-edit-id").value = id;
+          $("#note-title").value = items[0].title;
+          $("#note-body").value = items[0].body;
+          $("#note-tags").value = items[0].tags || "";
+          $("#note-cancel").hidden = false;
+        });
+      });
+      list.querySelectorAll(".note-del").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!confirm("Usunąć notatkę?")) return;
+          await fetch(`/api/user-notes/${btn.dataset.id}`, { method: "DELETE" });
+          refreshNotesList();
+        });
+      });
+    } catch (e) {
+      list.innerHTML = `<p class='muted'>${escapeHtml(e.message)}</p>`;
+    }
+  }
+
+  $("#note-form")?.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const editId = $("#note-edit-id").value;
+    const payload = {
+      title: $("#note-title").value.trim(),
+      body: $("#note-body").value.trim(),
+      tags: $("#note-tags").value.trim() || null,
+    };
+    const url = editId ? `/api/user-notes/${editId}` : "/api/user-notes";
+    const method = editId ? "PUT" : "POST";
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.detail || "Błąd zapisu");
+      return;
+    }
+    $("#note-edit-id").value = "";
+    $("#note-title").value = "";
+    $("#note-body").value = "";
+    $("#note-tags").value = "";
+    $("#note-cancel").hidden = true;
+    refreshNotesList();
+    refreshKbBanner();
+  });
+
+  $("#note-cancel")?.addEventListener("click", () => {
+    $("#note-edit-id").value = "";
+    $("#note-title").value = "";
+    $("#note-body").value = "";
+    $("#note-tags").value = "";
+    $("#note-cancel").hidden = true;
+  });
+
+  $("#notes-reindex")?.addEventListener("click", async () => {
+    const res = await fetch("/api/user-notes/reindex", { method: "POST" });
+    const data = await res.json();
+    alert(res.ok ? `Przeindeksowano: ${data.reindexed} notatek.` : (data.detail || "Błąd"));
+    refreshNotesList();
+  });
+
   function refreshChatHint() {
     fetch("/api/knowledge/stats")
       .then((r) => r.json())
       .then((s) => {
+        refreshKbBanner();
         if (!s.chunks && !$("#chat-messages").children.length) {
-          appendChatMessage("system", `Baza: ${s.guides || 0} przewodników, ${s.chunks || 0} fragmentów. Zadaj pytanie.`);
+          appendChatMessage(
+            "system",
+            `Baza: ${s.guides || 0} przewodników, ${s.chunks || 0} fragmentów, ${s.user_notes || 0} notatek. Zadaj pytanie.`,
+          );
         }
       })
       .catch(() => {});
+    updateSessionLabel();
   }
 
   $("#chat-form").addEventListener("submit", async (ev) => {

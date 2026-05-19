@@ -55,6 +55,8 @@ CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "150"))
 MAX_FILE_SIZE_KB: int = int(os.getenv("MAX_FILE_SIZE_KB", "500"))  # pomijaj duże pliki
 TOP_K_RETRIEVAL: int = int(os.getenv("TOP_K_RETRIEVAL", "6"))
 CHAT_HISTORY_LIMIT: int = int(os.getenv("CHAT_HISTORY_LIMIT", "10"))
+RAG_MIN_SCORE: float = float(os.getenv("RAG_MIN_SCORE", "0.35"))
+CHAT_TEMPERATURE: float = float(os.getenv("CHAT_TEMPERATURE", "0.15"))
 
 # Rozszerzenia plików, które analizujemy
 CODE_EXTENSIONS: List[str] = [
@@ -139,6 +141,26 @@ TTS_VENV_PYTHON: Path = Path(
     os.getenv("TTS_VENV_PYTHON", "/mnt/ollama/ai-envs/tts/.venv/bin/python")
 )
 
+# Supertonic TTS (Phase A1) — separate venv on /mnt/ollama
+TTS_BACKEND: str = os.getenv("TTS_BACKEND", "piper")  # piper | supertonic
+SUPERTONIC_BIN: Path = Path(
+    os.getenv(
+        "SUPERTONIC_BIN",
+        "/mnt/ollama/ai-envs/tts-supertonic/.venv/bin/supertonic",
+    )
+)
+SUPERTONIC_MODEL: str = os.getenv("SUPERTONIC_MODEL", "supertonic-3")
+SUPERTONIC_LANG: str = os.getenv("SUPERTONIC_LANG", "pl")
+SUPERTONIC_VOICE: str = os.getenv("SUPERTONIC_VOICE", "M1")
+SUPERTONIC_URL: str = os.getenv("SUPERTONIC_URL", "http://127.0.0.1:7788")
+
+# Safe command execution (Phase B1)
+ACTION_TIMEOUT_S: int = int(os.getenv("ACTION_TIMEOUT_S", "60"))
+ACTIONS_LOG: Path = LOGS_DIR / "actions.log"
+
+# Knowledge onboarding threshold (Phase A4)
+KB_EMPTY_CHUNK_THRESHOLD: int = int(os.getenv("KB_EMPTY_CHUNK_THRESHOLD", "5"))
+
 # Conversation: balanced | voice | detailed
 CHAT_CONVERSATION_MODE: str = os.getenv("CHAT_CONVERSATION_MODE", "balanced")
 
@@ -171,4 +193,11 @@ def summary() -> dict:
             "model": STT_MODEL,
             "whisper_models_dir": str(WHISPER_MODELS_DIR),
         },
+        "tts": {
+            "backend": TTS_BACKEND,
+            "piper_bin": str(PIPER_BIN),
+            "supertonic_bin": str(SUPERTONIC_BIN),
+            "supertonic_lang": SUPERTONIC_LANG,
+        },
+        "kb_empty_chunk_threshold": KB_EMPTY_CHUNK_THRESHOLD,
     }

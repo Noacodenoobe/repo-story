@@ -1031,6 +1031,104 @@ footer {
   opacity: 0.85;
 }
 
+.kb-banner {
+  background: color-mix(in srgb, var(--warning) 18%, var(--bg-elev));
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin: 12px 0;
+  font-size: 14px;
+}
+
+.kb-banner.hidden {
+  display: none;
+}
+
+.kb-banner-actions {
+  margin-top: 8px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-session-bar {
+  margin: 8px 0 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#tts-backend-select {
+  margin-left: 6px;
+}
+
+.projects-list,
+.notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.projects-item,
+.note-item {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+}
+
+.note-form label {
+  display: block;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.note-form input,
+.note-form textarea {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.note-actions {
+  margin-top: 6px;
+}
+
+.install-checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.checklist-item {
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.checklist-item label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.checklist-item input[type="checkbox"] {
+  width: auto;
+  margin-right: 8px;
+  align-self: flex-start;
+}
+
+.action-run-block {
+  margin-top: 10px;
+}
+
+.action-run-output {
+  margin-top: 8px;
+  max-height: 200px;
+  overflow: auto;
+}
+
 /* --------------------------------------------------------------------- mobile */
 @media (max-width: 640px) {
   .topbar { flex-direction: column; gap: 8px; align-items: flex-start; }

@@ -12,7 +12,9 @@ from . import config
 from .guide_indexer import GuideIndexer
 from .knowledge_store import KnowledgeStore
 from .llm_client import OllamaClient, OllamaError, get_client
+from .chat_grounding import build_grounding_instructions, sanitize_run_blocks
 from .conversation_config import build_system_prompt
+from .rag_retrieval import retrieve_for_chat
 from .sse import format_sse_event
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,9 @@ class ChatContext:
     citations: List[Dict[str, Any]] = field(default_factory=list)
     prompt: str = ""
     history_block: str = ""
+    focus_guide_title: Optional[str] = None
+    weak_context: bool = False
+    context_parts: List[str] = field(default_factory=list)
 
 
 class RagChatService:
@@ -48,45 +53,33 @@ class RagChatService:
     def _resolve_session_id(self, session_id: Optional[str]) -> str:
         return session_id or str(uuid.uuid4())
 
-    def _retrieve(self, message: str) -> Tuple[List[Dict[str, Any]], List[str]]:
+    def _retrieve(
+        self,
+        message: str,
+        session_id: str,
+    ) -> Tuple[List[Dict[str, Any]], List[str], Optional[str], bool]:
         """
-        Embed query and search knowledge base.
+        Embed expanded query and search knowledge base.
 
         Returns:
-            Tuple of (citations, context_parts for prompt).
+            Tuple of (citations, context_parts, focus_guide_title, weak_context).
         """
-        citations: List[Dict[str, Any]] = []
-        context_parts: List[str] = []
-
         try:
-            q_emb = self.client.embed(message[:2000])
-            hits = self.store.search_chunks(q_emb, top_k=config.TOP_K_RETRIEVAL)
-            for score, chunk in hits:
-                if score < 0.3:
-                    continue
-                label = chunk.get("guide_title") or "System"
-                section = chunk.get("section") or ""
-                citations.append({
-                    "guide_id": chunk.get("guide_id"),
-                    "guide_title": label,
-                    "section": section,
-                    "excerpt": chunk["text"][:300],
-                    "score": round(score, 3),
-                })
-                context_parts.append(
-                    f"[{label} / {section}]\n{chunk['text'][:800]}"
-                )
+            citations, context_parts, focus_title = retrieve_for_chat(
+                self.store,
+                self.client,
+                message,
+                session_id,
+            )
+            guide_chunks = [
+                c for c in citations
+                if c.get("guide_id") and (c.get("score") or 0) >= config.RAG_MIN_SCORE
+            ]
+            weak = len(guide_chunks) < 1
+            return citations, context_parts, focus_title, weak
         except Exception as exc:  # noqa: BLE001
             logger.warning("RAG retrieval failed: %s", exc)
-
-        profile = self.store.get_system_profile()
-        if profile and profile.get("summary_text"):
-            context_parts.insert(
-                0,
-                f"[Profil systemu]\n{profile['summary_text'][:1500]}",
-            )
-
-        return citations, context_parts
+            return [], [], None, True
 
     def _build_history_block(self, session_id: str) -> str:
         """Format recent session messages for multi-turn context."""
@@ -116,17 +109,37 @@ class RagChatService:
         message: str,
         context_parts: List[str],
         history_block: str = "",
+        *,
+        focus_guide_title: Optional[str] = None,
+        weak_context: bool = False,
     ) -> str:
         context = (
             "\n\n---\n\n".join(context_parts)
             if context_parts
-            else "(brak kontekstu w bazie)"
+            else "(brak dopasowanych fragmentów w bazie)"
         )
+        focus_line = ""
+        if focus_guide_title:
+            focus_line = (
+                f"TEMAT ROZMOWY (priorytet): przewodnik „{focus_guide_title}”.\n\n"
+            )
+        weak_line = ""
+        if weak_context:
+            weak_line = (
+                "UWAGA: Brak trafnych fragmentów przewodnika w bazie — "
+                "nie zgaduj instalacji; powiedz użytkownikowi, czego brakuje.\n\n"
+            )
+        grounding = build_grounding_instructions(message, context_parts)
+        grounding_block = f"INSTRUKCJE DODATKOWE:\n{grounding}\n\n" if grounding else ""
         return (
             f"{history_block}"
-            f"KONTEKST Z BAZY WIEDZY:\n{context}\n\n"
-            f"PYTANIE UŻYTKOWNIKA:\n{message}\n\n"
-            "Odpowiedz pomocnie po polsku."
+            f"{focus_line}"
+            f"{weak_line}"
+            f"{grounding_block}"
+            f"KONTEKST Z BAZY WIEDZY (jedyne dozwolone źródło faktów):\n{context}\n\n"
+            f"AKTUALNE PYTANIE (odpowiedz wyłącznie na to):\n{message}\n\n"
+            "Użyj wyłącznie kontekstu powyżej. Nie powtarzaj poprzedniej odpowiedzi, "
+            "jeśli pytanie jest uzupełniające. Nie zostawiaj pustych punktów listy."
         )
 
     def prepare_context(
@@ -148,15 +161,24 @@ class RagChatService:
             ChatContext ready for generate or stream_generate.
         """
         sid = self._resolve_session_id(session_id)
-        citations, context_parts = self._retrieve(message)
+        citations, context_parts, focus_title, weak = self._retrieve(message, sid)
         history_block = self._build_history_block(sid) if include_history else ""
-        prompt = self._build_prompt(message, context_parts, history_block)
+        prompt = self._build_prompt(
+            message,
+            context_parts,
+            history_block,
+            focus_guide_title=focus_title,
+            weak_context=weak,
+        )
         return ChatContext(
             session_id=sid,
             message=message,
             citations=citations,
             prompt=prompt,
             history_block=history_block,
+            focus_guide_title=focus_title,
+            weak_context=weak,
+            context_parts=context_parts,
         )
 
     def _generate_answer(self, prompt: str, *, voice_mode: bool = False) -> str:
@@ -167,6 +189,7 @@ class RagChatService:
                 prompt=prompt,
                 model=config.MODEL_POLISH,
                 system=build_system_prompt(voice_mode=voice_mode),
+                temperature=config.CHAT_TEMPERATURE,
             )
             return (result.response or "").strip() or _FALLBACK_ANSWER
         except (OllamaError, Exception) as exc:  # noqa: BLE001
@@ -188,6 +211,7 @@ class RagChatService:
         """
         ctx = self.prepare_context(message, session_id)
         answer = self._generate_answer(ctx.prompt, voice_mode=voice_mode)
+        answer = sanitize_run_blocks(answer, ctx.context_parts)
 
         self.store.add_chat_message(ctx.session_id, "user", message)
         self.store.add_chat_message(
@@ -224,6 +248,8 @@ class RagChatService:
             {
                 "session_id": ctx.session_id,
                 "citations": ctx.citations,
+                "focus_guide": ctx.focus_guide_title,
+                "weak_context": ctx.weak_context,
             },
         )
 
@@ -247,6 +273,7 @@ class RagChatService:
                 prompt=ctx.prompt,
                 model=config.MODEL_POLISH,
                 system=build_system_prompt(voice_mode=voice_mode),
+                temperature=config.CHAT_TEMPERATURE,
             ):
                 parts.append(chunk)
                 yield format_sse_event("token", {"text": chunk})
@@ -260,6 +287,7 @@ class RagChatService:
             return
 
         answer = "".join(parts).strip() or _FALLBACK_ANSWER
+        answer = sanitize_run_blocks(answer, ctx.context_parts)
         self.store.add_chat_message(
             ctx.session_id,
             "assistant",

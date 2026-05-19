@@ -16,6 +16,18 @@ Lub w UI: zakładka **Diagnostyka** → **Zbierz profil systemu**.
 
 ## Cron (co 6 godzin)
 
+Skrypt pomocniczy (serwer działa → API; offline → zapis JSON):
+
+```bash
+/mnt/ollama/projekty/repo-story/scripts/refresh-profile-cron.sh
+```
+
+```cron
+0 */6 * * * /mnt/ollama/projekty/repo-story/scripts/refresh-profile-cron.sh >> /mnt/ollama/projekty/repo-story/logs/profile-cron.log 2>&1
+```
+
+Alternatywa ręczna (collect + upload):
+
 ```cron
 0 */6 * * * cd /mnt/ollama/projekty/repo-story && bash scripts/collect-system-profile.sh > data/system-profile.json && curl -sf -X POST http://127.0.0.1:9743/api/system-profile/refresh
 ```
