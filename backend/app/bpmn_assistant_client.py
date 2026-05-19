@@ -47,16 +47,54 @@ class BpmnAssistantClient:
             return False
 
     def health_detail(self) -> Dict[str, Any]:
-        """Extended health including API key presence (never expose values)."""
-        ok = self.health()
+        """Extended health: Ollama-first engine status."""
+        from .llm_client import get_client
+
+        ollama_ok = get_client().ping()
+        sidecar_ok = self.health()
         keys = self.load_api_keys()
+        engine = "ollama" if config.BPMN_USE_OLLAMA else "sidecar_cloud"
         return {
-            "ok": ok,
+            "ok": ollama_ok if config.BPMN_USE_OLLAMA else sidecar_ok,
+            "engine": engine,
             "url": self.base_url,
             "enabled": config.BPMN_ASSISTANT_ENABLED,
+            "ollama_ok": ollama_ok,
+            "ollama_model": config.BPMN_OLLAMA_MODEL,
+            "sidecar_ok": sidecar_ok,
             "api_keys_configured": bool(keys),
-            "missing_api_keys": not bool(keys),
+            "missing_api_keys": not bool(keys) and not config.BPMN_USE_OLLAMA,
+            "note": (
+                "Diagramy BPMN: lokalny model Ollama (bez kluczy chmurowych)."
+                if config.BPMN_USE_OLLAMA
+                else "Diagramy BPMN: sidecar wymaga kluczy API w .env."
+            ),
         }
+
+    def bpmn_to_json(self, bpmn_xml: str) -> List[Dict[str, Any]]:
+        """
+        Convert BPMN XML to JSON via sidecar (no LLM keys required).
+
+        Returns:
+            Parsed BPMN JSON list or empty list on failure.
+        """
+        if not bpmn_xml or not self.health():
+            return []
+        try:
+            resp = requests.post(
+                f"{self.base_url}/bpmn_to_json",
+                json={"bpmn_xml": bpmn_xml},
+                timeout=min(self.timeout_s, 60),
+            )
+            if resp.ok:
+                data = resp.json()
+                if isinstance(data, list):
+                    return data
+                if isinstance(data, dict):
+                    return [data]
+        except requests.RequestException as exc:
+            logger.debug("bpmn_to_json sidecar failed: %s", exc)
+        return []
 
     def load_api_keys(self) -> Dict[str, str]:
         """

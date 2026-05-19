@@ -180,6 +180,17 @@ BPMN_ASSISTANT_ENV_FILE: str = os.getenv(
 )
 BPMN_ASSISTANT_API_KEYS_JSON: str = os.getenv("BPMN_ASSISTANT_API_KEYS_JSON", "")
 
+# Phase C5: local BPMN via Ollama (default — no cloud keys required)
+BPMN_USE_OLLAMA: bool = os.getenv("BPMN_USE_OLLAMA", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+BPMN_OLLAMA_MODEL: str = os.getenv(
+    "BPMN_OLLAMA_MODEL",
+    os.getenv("MODEL_CODER", "qwen3-coder:latest"),
+)
+
 
 def summary() -> dict:
     """Zwraca podsumowanie konfiguracji - przydatne do debug i UI."""
@@ -220,5 +231,7 @@ def summary() -> dict:
             "enabled": BPMN_ASSISTANT_ENABLED,
             "url": BPMN_ASSISTANT_URL,
             "frontend_url": BPMN_ASSISTANT_FRONTEND_URL,
+            "use_ollama": BPMN_USE_OLLAMA,
+            "ollama_model": BPMN_OLLAMA_MODEL,
         },
     }

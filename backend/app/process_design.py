@@ -1,5 +1,5 @@
 """
-BPMN process design sessions and sidecar orchestration (Phase C2/C4).
+BPMN process design sessions — Ollama-first, optional sidecar for XML→JSON.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from . import config
 from .bpmn_assistant_client import BpmnAssistantClient, BpmnAssistantError
+from .bpmn_ollama_generator import generate_bpmn_xml_ollama
 from .knowledge_store import KnowledgeStore
 from .llm_client import OllamaClient, OllamaError, get_client
 
@@ -33,10 +34,11 @@ class ProcessDesignArtifact(BaseModel):
     sidecar_status: str = "ok"
     revision: int = 1
     title: str = ""
+    engine: str = "ollama"
 
 
 class ProcessDesignService:
-    """Manage design sessions and call bpmn-assistant sidecar."""
+    """Manage design sessions; generate BPMN via local Ollama by default."""
 
     def __init__(
         self,
@@ -69,20 +71,22 @@ class ProcessDesignService:
         self,
         bpmn_json: List[Dict[str, Any]],
         user_prompt: str,
+        *,
+        bpmn_xml: str = "",
     ) -> str:
         """Generate Polish summary via local Bielik (Phase C4)."""
-        if not bpmn_json:
-            return "Wygenerowano diagram BPMN — brak szczegółowego opisu elementów."
+        if not bpmn_json and not bpmn_xml:
+            return "Nie udało się wygenerować diagramu BPMN."
 
-        compact = json.dumps(bpmn_json, ensure_ascii=False)[:6000]
+        context = json.dumps(bpmn_json, ensure_ascii=False)[:6000] if bpmn_json else bpmn_xml[:4000]
         prompt = (
             f"Opisz po polsku w 4–6 zdaniach ten proces BPMN dla użytkownika nietechnicznego.\n"
             f"Prośba użytkownika: {user_prompt}\n"
-            f"Dane BPMN (JSON): {compact}\n"
-            "Nie wymyślaj kroków spoza JSON. Używaj prostego języka."
+            f"Dane procesu:\n{context}\n"
+            "Nie wymyślaj kroków spoza danych. Używaj prostego języka."
         )
         if not self.llm.ping() or not self.llm.has_model(config.MODEL_POLISH):
-            return "Diagram BPMN został wygenerowany. Otwórz podgląd po prawej stronie."
+            return "Diagram BPMN został wygenerowany lokalnie (Ollama). Otwórz podgląd po prawej."
 
         try:
             result = self.llm.generate(
@@ -92,10 +96,44 @@ class ProcessDesignService:
                 temperature=0.2,
             )
             text = (result.response or "").strip()
-            return text or "Diagram BPMN został wygenerowany."
+            return text or "Diagram BPMN został wygenerowany lokalnie (Ollama)."
         except OllamaError as exc:
             logger.warning("Bielik narrative failed: %s", exc)
-            return "Diagram BPMN został wygenerowany (opis lokalny niedostępny)."
+            return "Diagram BPMN został wygenerowany lokalnie (Ollama)."
+
+    def _generate_via_ollama(
+        self,
+        message: str,
+        existing_xml: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> tuple[str, str, List[Dict[str, Any]], str]:
+        """Return (xml, model_used, bpmn_json, status)."""
+        xml, model_used = generate_bpmn_xml_ollama(
+            message,
+            existing_xml=existing_xml,
+            client=self.llm,
+            model=model or config.BPMN_OLLAMA_MODEL,
+        )
+        bpmn_json = self.bpmn.bpmn_to_json(xml) if self.bpmn.health() else []
+        return xml, model_used, bpmn_json, "ollama"
+
+    def _generate_via_sidecar(
+        self,
+        message_history: List[Dict[str, str]],
+        process_payload: Optional[Dict[str, Any]],
+        model: Optional[str] = None,
+    ) -> tuple[str, str, List[Dict[str, Any]], str]:
+        """Cloud sidecar path (only when BPMN_USE_OLLAMA=false)."""
+        result = self.bpmn.modify(
+            message_history,
+            process=process_payload,
+            model=model or config.BPMN_ASSISTANT_MODEL,
+        )
+        bpmn_xml = result.get("bpmn_xml") or ""
+        bpmn_json = result.get("bpmn_json") or []
+        if isinstance(bpmn_json, dict):
+            bpmn_json = [bpmn_json]
+        return bpmn_xml, model or config.BPMN_ASSISTANT_MODEL, bpmn_json, "sidecar_cloud"
 
     def generate(
         self,
@@ -108,77 +146,85 @@ class ProcessDesignService:
         """
         Create or continue a BPMN design session.
 
-        Args:
-            message: User process description or revision request.
-            session_id: Optional chat session link.
-            design_id: Existing design session to revise.
-            model: Override sidecar LLM model.
-
-        Returns:
-            ProcessDesignArtifact with XML and narrative.
+        Default engine: local Ollama (no cloud API keys).
         """
         chat_session = session_id or str(uuid.uuid4())
-        sidecar_status = "ok"
-        model_used = model or config.BPMN_ASSISTANT_MODEL
+        status = "ollama"
+        engine = "ollama"
+        model_used = model or config.BPMN_OLLAMA_MODEL
 
         existing = self.store.get_process_design_session(design_id) if design_id else None
         history: List[Dict[str, str]] = []
         revision = 1
         title = message[:80]
+        existing_xml: Optional[str] = None
         process_payload: Optional[Dict[str, Any]] = None
 
         if existing:
             history = json.loads(existing.get("history_json") or "[]")
             revision = int(existing.get("revision") or 0) + 1
             title = existing.get("title") or title
-            if existing.get("bpmn_xml"):
+            existing_xml = existing.get("bpmn_xml") or None
+            if existing_xml:
                 process_payload = {
-                    "bpmn_xml": existing["bpmn_xml"],
+                    "bpmn_xml": existing_xml,
                     "bpmn_json": json.loads(existing.get("bpmn_json") or "[]"),
                 }
 
         message_history = self._build_message_history(history, message)
+        bpmn_xml = ""
+        bpmn_json: List[Dict[str, Any]] = []
 
         try:
-            if not self.bpmn.health():
-                sidecar_status = "unavailable"
-                raise BpmnAssistantError("Sidecar not running")
-            result = self.bpmn.modify(
-                message_history,
-                process=process_payload,
-                model=model_used,
-            )
-        except BpmnAssistantError as exc:
+            if config.BPMN_USE_OLLAMA:
+                bpmn_xml, model_used, bpmn_json, engine = self._generate_via_ollama(
+                    message,
+                    existing_xml=existing_xml,
+                    model=model,
+                )
+                status = "ollama"
+            else:
+                if not self.bpmn.health():
+                    status = "unavailable"
+                    raise BpmnAssistantError("Sidecar not running")
+                bpmn_xml, model_used, bpmn_json, engine = self._generate_via_sidecar(
+                    message_history,
+                    process_payload,
+                    model=model,
+                )
+                status = "sidecar_cloud"
+        except (OllamaError, BpmnAssistantError) as exc:
             err = str(exc)
             if "missing_api_keys" in err:
-                sidecar_status = "missing_api_keys"
-            elif sidecar_status != "unavailable":
-                sidecar_status = "error"
+                status = "missing_api_keys"
+            elif "Ollama" in err or "model" in err.lower():
+                status = "ollama_error"
+            else:
+                status = "error"
+            hint = (
+                "Sprawdź `ollama serve` i model "
+                f"{config.BPMN_OLLAMA_MODEL} (oraz Bielik do opisu)."
+                if config.BPMN_USE_OLLAMA
+                else "Sidecar wymaga kluczy API w .env — lub ustaw BPMN_USE_OLLAMA=true."
+            )
             return ProcessDesignArtifact(
                 session_id=chat_session,
                 design_id=design_id or str(uuid.uuid4()),
                 user_prompt=message,
-                narrative_pl=(
-                    "Nie udało się wygenerować diagramu BPMN. "
-                    f"Status sidecar: {sidecar_status}. "
-                    "Uruchom docker-compose w /mnt/ollama/projekty/bpmn-assistant "
-                    "i uzupełnij klucze API w .env sidecar."
-                ),
+                narrative_pl=f"Nie udało się wygenerować diagramu BPMN. {hint}\nSzczegóły: {exc}",
                 model_used=model_used,
-                sidecar_status=sidecar_status,
+                sidecar_status=status,
+                engine=engine,
                 revision=revision,
                 title=title,
             )
 
-        bpmn_xml = result.get("bpmn_xml") or ""
-        bpmn_json = result.get("bpmn_json") or []
-        if isinstance(bpmn_json, dict):
-            bpmn_json = [bpmn_json]
-
-        narrative = self._narrative_from_bpmn_json(bpmn_json, message)
-        new_history = message_history + [
-            {"role": "assistant", "content": narrative},
-        ]
+        narrative = self._narrative_from_bpmn_json(
+            bpmn_json,
+            message,
+            bpmn_xml=bpmn_xml,
+        )
+        new_history = message_history + [{"role": "assistant", "content": narrative}]
 
         saved_id = self.store.upsert_process_design_session(
             design_id=design_id,
@@ -198,7 +244,8 @@ class ProcessDesignService:
             bpmn_json=bpmn_json,
             narrative_pl=narrative,
             model_used=model_used,
-            sidecar_status=sidecar_status,
+            sidecar_status=status,
+            engine=engine,
             revision=revision,
             title=title,
         )

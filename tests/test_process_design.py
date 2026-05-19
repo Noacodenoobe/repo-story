@@ -27,16 +27,22 @@ class TestProcessDesign(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
-    @patch.object(ProcessDesignService, "_narrative_from_bpmn_json", return_value="Opis procesu.")
-    def test_generate_saves_session(self, _nar: MagicMock) -> None:
-        self.bpmn.health.return_value = True
-        self.bpmn.modify.return_value = {
-            "bpmn_xml": "<bpmn:definitions xmlns:bpmn=\"http://www.omg.org/spec/BPMN/20100524/MODEL\"/>",
-            "bpmn_json": [{"id": "StartEvent_1"}],
-        }
+    @patch.object(ProcessDesignService, "_generate_via_ollama")
+    def test_generate_saves_session(self, mock_ollama: MagicMock) -> None:
+        mock_ollama.return_value = (
+            '<bpmn2:definitions xmlns:bpmn2="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+            '<bpmn2:process id="P1"/></bpmn2:definitions>',
+            "qwen3-coder:latest",
+            [{"id": "P1"}],
+            "ollama",
+        )
+        self.llm.ping.return_value = True
+        self.llm.has_model.return_value = True
+        self.llm.generate.return_value = MagicMock(response="Opis procesu po polsku.")
         artifact = self.svc.generate("proces zamówienia pizzy")
         self.assertTrue(artifact.bpmn_xml)
-        self.assertEqual(artifact.sidecar_status, "ok")
+        self.assertEqual(artifact.engine, "ollama")
+        self.assertEqual(artifact.sidecar_status, "ollama")
         saved = self.store.get_process_design_session(artifact.design_id)
         self.assertIsNotNone(saved)
         self.assertIn("bpmn_xml", saved)

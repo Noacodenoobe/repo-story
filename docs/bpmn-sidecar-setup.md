@@ -1,64 +1,58 @@
-# BPMN Assistant sidecar setup (Phase C1)
+# BPMN — Ollama (domyślnie) i opcjonalny sidecar Docker
 
-Repo Opowieść uses **bpmn-assistant** as a Docker sidecar for BPMN 2.0 diagrams.
-RAG and deployment plans stay in repo-story; diagram generation calls the sidecar API.
+Repo Opowieść generuje **diagramy BPMN 2.0 lokalnie przez Ollamę** (`BPMN_USE_OLLAMA=true` — domyślnie).
+**Nie potrzebujesz kluczy API chmurowych.**
 
-**Default host ports (avoid busy 8000/8080 on this machine):**
+Sidecar `bpmn-assistant` (Docker) jest **opcjonalny** — służy do:
+- konwersji XML → JSON (`/bpmn_to_json`, bez kluczy LLM)
+- pełnego edytora UI na porcie 9749
 
-| Service | Host port | Container |
-|---------|-----------|-----------|
-| API | **9748** | 8000 |
-| UI | **9749** | 8080 |
+## Wymagania (tryb lokalny)
+
+```bash
+ollama serve
+ollama pull qwen3-coder:latest          # BPMN_OLLAMA_MODEL (domyślnie)
+ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q4_K_M  # opisy po polsku
+```
+
+Opcjonalnie w `.env` repo-story:
+
+```bash
+BPMN_USE_OLLAMA=true
+BPMN_OLLAMA_MODEL=qwen3-coder:latest
+```
+
+Sprawdzenie:
+
+```bash
+curl -s http://127.0.0.1:9743/api/bpmn-assistant/health | python3 -m json.tool
+# engine: "ollama", ollama_ok: true
+```
+
+## Sidecar Docker (opcjonalnie)
+
+Port **8000** na hoście jest często zajęty — mapowanie **9748 / 9749 / 3017**:
+
+| Usługa | Port hosta | Kontener |
+|--------|------------|----------|
+| API | 9748 | 8000 |
+| UI | 9749 | 80 |
 | Layout | 3017 | 3001 |
-
-## Prerequisites
-
-- Docker and docker-compose
-- At least one cloud LLM API key (OpenAI, Anthropic, Google, or Fireworks)
-- Install path under `/mnt/ollama/projekty/` (host regulamin)
-
-## Install (one command from repo-story)
 
 ```bash
 cd /mnt/ollama/projekty/repo-story
 ./scripts/setup-bpmn-sidecar.sh
+./scripts/check-bpmn-sidecar.sh
 ```
 
-Uses **`docker compose`** (plugin), not legacy `docker-compose`. Manual steps:
+Używaj **`docker compose`** (plugin), nie legacy `docker-compose`.
 
-```bash
-cd /mnt/ollama/projekty
-git clone https://github.com/jtlicardo/bpmn-assistant.git
-cd bpmn-assistant/src/bpmn_assistant
-cp .env.example .env   # add API keys
-cd ../..
-# Edit docker-compose.yml ports → 9748:8000, 9749:80, 3017:3001
-docker compose up --build -d
-```
+Klucze w `src/bpmn_assistant/.env` sidecar są potrzebne **tylko** gdy ustawisz `BPMN_USE_OLLAMA=false`.
 
-Host ports (port 8000 is often busy on this machine):
+## Podział ról
 
-| Service | Host port | Container |
-|---------|-----------|-----------|
-| API | **9748** | 8000 |
-| UI | **9749** | 80 (nginx) |
-| Layout | 3017 | 3001 |
-curl -s http://127.0.0.1:9743/api/bpmn-assistant/health | python3 -m json.tool
-curl -s http://127.0.0.1:9748/
-```
-
-## Repo Opowieść config (optional `.env`)
-
-```bash
-BPMN_ASSISTANT_URL=http://127.0.0.1:9748
-BPMN_ASSISTANT_FRONTEND_URL=http://127.0.0.1:9749
-BPMN_ASSISTANT_ENV_FILE=/mnt/ollama/projekty/bpmn-assistant/src/bpmn_assistant/.env
-```
-
-Keys are read from the sidecar `.env` file on the server — not indexed into `knowledge.db`.
-
-## Notes
-
-- **Ollama/Bielik** — Polish narratives and deployment plans (local)
-- **Sidecar cloud keys** — BPMN XML generation via `/modify`
-- Do not use `pip install bpmn-assistant` (not the upstream project on PyPI)
+| Warstwa | Silnik |
+|---------|--------|
+| RAG, plany wdrożenia, opisy PL | Ollama / Bielik |
+| Diagram BPMN 2.0 XML | Ollama (`qwen3-coder` domyślnie) |
+| Edytor / XML→JSON | opcjonalny sidecar Docker |

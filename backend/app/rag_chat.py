@@ -391,6 +391,7 @@ class RagChatService:
         self.store.add_chat_message(ctx.session_id, "user", message)
 
         sidecar_ok = self.bpmn_client.health()
+        ollama_ok = self.client.ping()
         yield format_sse_event(
             "meta",
             {
@@ -401,6 +402,8 @@ class RagChatService:
                 "missing_howto": ctx.missing_howto,
                 "response_mode": ctx.response_mode,
                 "sidecar_ok": sidecar_ok,
+                "ollama_ok": ollama_ok,
+                "bpmn_engine": "ollama" if config.BPMN_USE_OLLAMA else "sidecar_cloud",
             },
         )
 
