@@ -322,8 +322,8 @@ Pliki: `frontend/public/index.html`, `js/app.js`, `css/styles.css`
 
 ```python
 BPMN_ASSISTANT_ENABLED = os.getenv("BPMN_ASSISTANT_ENABLED", "true").lower() == "true"
-BPMN_ASSISTANT_URL = os.getenv("BPMN_ASSISTANT_URL", "http://127.0.0.1:8000")
-BPMN_ASSISTANT_FRONTEND_URL = os.getenv("BPMN_ASSISTANT_FRONTEND_URL", "http://127.0.0.1:8080")
+BPMN_ASSISTANT_URL = os.getenv("BPMN_ASSISTANT_URL", "http://127.0.0.1:9748")
+BPMN_ASSISTANT_FRONTEND_URL = os.getenv("BPMN_ASSISTANT_FRONTEND_URL", "http://127.0.0.1:9749")
 BPMN_ASSISTANT_MODEL = os.getenv("BPMN_ASSISTANT_MODEL", "gpt-4.1")  # przykład
 BPMN_ASSISTANT_TIMEOUT_S = float(os.getenv("BPMN_ASSISTANT_TIMEOUT_S", "120"))
 # Ścieżka do .env sidecar (opcjonalnie, tylko odczyt kluczy po stronie serwera)

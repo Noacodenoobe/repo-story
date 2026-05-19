@@ -26,7 +26,7 @@ class BpmnAssistantError(Exception):
 
 
 class BpmnAssistantClient:
-    """Thin wrapper around bpmn-assistant FastAPI (:8000)."""
+    """Thin wrapper around bpmn-assistant FastAPI (host port 9748 by default)."""
 
     def __init__(
         self,

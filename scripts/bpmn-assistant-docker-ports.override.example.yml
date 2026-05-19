@@ -1,0 +1,12 @@
+# Copy to /mnt/ollama/projekty/bpmn-assistant/docker-compose.override.yml
+# Maps sidecar to non-default host ports (8000 is often busy on this host).
+services:
+  bpmn_assistant:
+    ports:
+      - "9748:8000"
+  bpmn_frontend:
+    ports:
+      - "9749:8080"
+  bpmn_layout_server:
+    ports:
+      - "3017:3001"

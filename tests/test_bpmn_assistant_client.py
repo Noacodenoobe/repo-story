@@ -15,7 +15,7 @@ class TestBpmnAssistantClient(unittest.TestCase):
     @patch("backend.app.bpmn_assistant_client.requests.get")
     def test_health_ok(self, mock_get: MagicMock) -> None:
         mock_get.return_value.status_code = 200
-        client = BpmnAssistantClient(base_url="http://127.0.0.1:8000")
+        client = BpmnAssistantClient(base_url="http://127.0.0.1:9748")
         self.assertTrue(client.health())
 
     @patch("backend.app.bpmn_assistant_client.requests.post")
@@ -26,7 +26,7 @@ class TestBpmnAssistantClient(unittest.TestCase):
             "bpmn_xml": "<bpmn:definitions/>",
             "bpmn_json": [],
         }
-        client = BpmnAssistantClient(base_url="http://127.0.0.1:8000")
+        client = BpmnAssistantClient(base_url="http://127.0.0.1:9748")
         result = client.modify([{"role": "user", "content": "order pizza process"}])
         self.assertIn("bpmn_xml", result)
 

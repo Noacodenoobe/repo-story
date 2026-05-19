@@ -3,6 +3,14 @@
 Repo Opowieść uses **bpmn-assistant** as a Docker sidecar for BPMN 2.0 diagrams.
 RAG and deployment plans stay in repo-story; diagram generation calls the sidecar API.
 
+**Default host ports (avoid busy 8000/8080 on this machine):**
+
+| Service | Host port | Container |
+|---------|-----------|-----------|
+| API | **9748** | 8000 |
+| UI | **9749** | 8080 |
+| Layout | 3017 | 3001 |
+
 ## Prerequisites
 
 - Docker and docker-compose
@@ -18,29 +26,42 @@ cd bpmn-assistant/src/bpmn_assistant
 cp .env.example .env
 # Edit .env — add API keys (never commit)
 cd ../..
-docker-compose up --build -d
 ```
 
-## Ports
+Create `docker-compose.override.yml` in the repo root (or edit `ports` in compose):
 
-| Service | Port | Role |
-|---------|------|------|
-| bpmn_assistant API | 8000 | POST /modify |
-| bpmn_frontend | 8080 | Full editor UI |
-| bpmn_layout_server | 3001 | Layout |
+```yaml
+services:
+  bpmn_assistant:
+    ports:
+      - "9748:8000"
+  bpmn_frontend:
+    ports:
+      - "9749:8080"
+  bpmn_layout_server:
+    ports:
+      - "3017:3001"
+```
+
+Then:
+
+```bash
+docker-compose up --build -d
+```
 
 ## Verify
 
 ```bash
 ./scripts/check-bpmn-sidecar.sh
 curl -s http://127.0.0.1:9743/api/bpmn-assistant/health | python3 -m json.tool
+curl -s http://127.0.0.1:9748/
 ```
 
 ## Repo Opowieść config (optional `.env`)
 
 ```bash
-BPMN_ASSISTANT_URL=http://127.0.0.1:8000
-BPMN_ASSISTANT_FRONTEND_URL=http://127.0.0.1:8080
+BPMN_ASSISTANT_URL=http://127.0.0.1:9748
+BPMN_ASSISTANT_FRONTEND_URL=http://127.0.0.1:9749
 BPMN_ASSISTANT_ENV_FILE=/mnt/ollama/projekty/bpmn-assistant/src/bpmn_assistant/.env
 ```
 

@@ -2,8 +2,8 @@
 # Check bpmn-assistant Docker sidecar health (Phase C1).
 set -euo pipefail
 
-API_URL="${BPMN_ASSISTANT_URL:-http://127.0.0.1:8000}"
-FE_URL="${BPMN_ASSISTANT_FRONTEND_URL:-http://127.0.0.1:8080}"
+API_URL="${BPMN_ASSISTANT_URL:-http://127.0.0.1:9748}"
+FE_URL="${BPMN_ASSISTANT_FRONTEND_URL:-http://127.0.0.1:9749}"
 
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"

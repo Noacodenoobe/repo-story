@@ -168,9 +168,9 @@ CHAT_CONVERSATION_MODE: str = os.getenv("CHAT_CONVERSATION_MODE", "balanced")
 BPMN_ASSISTANT_ENABLED: bool = os.getenv(
     "BPMN_ASSISTANT_ENABLED", "true"
 ).lower() in ("1", "true", "yes")
-BPMN_ASSISTANT_URL: str = os.getenv("BPMN_ASSISTANT_URL", "http://127.0.0.1:8000")
+BPMN_ASSISTANT_URL: str = os.getenv("BPMN_ASSISTANT_URL", "http://127.0.0.1:9748")
 BPMN_ASSISTANT_FRONTEND_URL: str = os.getenv(
-    "BPMN_ASSISTANT_FRONTEND_URL", "http://127.0.0.1:8080"
+    "BPMN_ASSISTANT_FRONTEND_URL", "http://127.0.0.1:9749"
 )
 BPMN_ASSISTANT_MODEL: str = os.getenv("BPMN_ASSISTANT_MODEL", "gpt-4.1")
 BPMN_ASSISTANT_TIMEOUT_S: float = float(os.getenv("BPMN_ASSISTANT_TIMEOUT_S", "120"))

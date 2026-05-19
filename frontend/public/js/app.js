@@ -857,7 +857,7 @@
     }
     el.classList.remove("hidden");
     if (mode === "process_design") {
-      el.textContent = `Tryb projektowania BPMN${sidecarOk ? " — sidecar OK" : " — sidecar niedostępny (Docker :8000)"}`;
+      el.textContent = `Tryb projektowania BPMN${sidecarOk ? " — sidecar OK" : " — sidecar niedostępny (Docker :9748)"}`;
     } else if (mode === "deployment") {
       el.textContent = "Tryb planu wdrożenia — poniżej strukturalny plan instalacji.";
     } else {
@@ -1504,9 +1504,9 @@
         fetch("/api/bpmn-assistant/health").then((r) => r.json()),
         fetch("/api/config").then((r) => r.json()).catch(() => ({})),
       ]);
-      const feUrl = cfg?.bpmn_assistant?.frontend_url || "http://127.0.0.1:8080";
+      const feUrl = cfg?.bpmn_assistant?.frontend_url || "http://127.0.0.1:9749";
       if (health.ok) {
-        el.textContent = "🟢 Sidecar API :8000";
+        el.textContent = "🟢 Sidecar API :9748";
         el.className = "bpmn-status ok";
         if (iframe) iframe.classList.add("hidden");
       } else {
