@@ -30,5 +30,5 @@ if [[ "$failed" -eq 0 ]]; then
 fi
 
 log "Sidecar niedostępny. Uruchom:"
-log "  cd /mnt/ollama/projekty/bpmn-assistant && docker-compose up -d"
+log "  cd /mnt/ollama/projekty/bpmn-assistant && docker compose up -d"
 exit 1

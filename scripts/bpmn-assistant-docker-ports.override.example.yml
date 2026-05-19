@@ -6,7 +6,7 @@ services:
       - "9748:8000"
   bpmn_frontend:
     ports:
-      - "9749:8080"
+      - "9749:80"
   bpmn_layout_server:
     ports:
       - "3017:3001"
