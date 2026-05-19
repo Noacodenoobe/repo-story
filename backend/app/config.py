@@ -186,10 +186,7 @@ BPMN_USE_OLLAMA: bool = os.getenv("BPMN_USE_OLLAMA", "true").lower() in (
     "true",
     "yes",
 )
-BPMN_OLLAMA_MODEL: str = os.getenv(
-    "BPMN_OLLAMA_MODEL",
-    os.getenv("MODEL_CODER", "qwen3-coder:latest"),
-)
+BPMN_OLLAMA_MODEL: str = os.getenv("BPMN_OLLAMA_MODEL", "qwen3.5:9b")
 
 
 def summary() -> dict:

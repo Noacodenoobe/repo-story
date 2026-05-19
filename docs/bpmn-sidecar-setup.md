@@ -11,7 +11,7 @@ Sidecar `bpmn-assistant` (Docker) jest **opcjonalny** — służy do:
 
 ```bash
 ollama serve
-ollama pull qwen3-coder:latest          # BPMN_OLLAMA_MODEL (domyślnie)
+ollama pull qwen3.5:9b              # BPMN_OLLAMA_MODEL (domyślnie, lżejszy niż qwen3-coder)
 ollama pull SpeakLeash/bielik-11b-v3.0-instruct:Q4_K_M  # opisy po polsku
 ```
 
@@ -19,7 +19,7 @@ Opcjonalnie w `.env` repo-story:
 
 ```bash
 BPMN_USE_OLLAMA=true
-BPMN_OLLAMA_MODEL=qwen3-coder:latest
+BPMN_OLLAMA_MODEL=qwen3.5:9b
 ```
 
 Sprawdzenie:
